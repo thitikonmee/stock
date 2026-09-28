@@ -20,6 +20,7 @@ MVP (Phase 0–8) ≈ **7–8 เดือน** (บาง phase ทำขนา
 - **DoD**: `docker compose up` + `pnpm dev` ใช้งานได้บนเครื่องใหม่ < 15 นาที; CI เขียว; ADR merged
 
 ## Phase 1 — Foundation (4 สัปดาห์)
+- **สถานะ (2026-09-28)**: ✅ **ครบ** — backend (auth + 2FA + step-up, RBAC, invitations + อีเมล, API keys + rate limit, POS device registration, document numbers, plan limits, notifications, audit) + **web app** (Next.js BFF: login/2FA/เลือกบริษัท, สมัคร, รับคำเชิญ, onboarding, ผู้ใช้, บทบาท, สาขา/คลัง, เครื่อง POS, API keys, ความปลอดภัย, แพ็กเกจ, การแจ้งเตือน) + E2E (Playwright) — ส่งต่อไป phase อื่น: e-mail/LINE ของการแจ้งเตือนอื่น ๆ (Phase 10), billing จริง (Phase 11), EN translations
 - **Goal**: multi-tenant, auth, RBAC, audit พร้อมให้ module อื่นเสียบ
 - **Features**: signup tenant, login, refresh rotation, 2FA TOTP, invite user, system roles + permission check + scope, API keys, branch/warehouse/POS device registration, audit log, document sequences, plan/limits skeleton, notification skeleton (in-app/email)
 - **DB**: tenants, users, user_sessions, permissions, roles, role_permissions, tenant_memberships, membership_roles, api_keys, branches, warehouses, pos_devices, document_sequences, audit_logs, plans, tenant_subscriptions, usage_counters, idempotency_keys, outbox_events, processed_events, notifications

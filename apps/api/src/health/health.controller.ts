@@ -1,6 +1,8 @@
 import { Controller, Get, Inject, ServiceUnavailableException } from '@nestjs/common';
+import { Public } from '../auth/decorators';
 import { READINESS_CHECK, type ReadinessCheck } from '../tokens';
 
+@Public()
 @Controller('health')
 export class HealthController {
   constructor(@Inject(READINESS_CHECK) private readonly readinessCheck: ReadinessCheck) {}

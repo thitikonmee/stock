@@ -1,0 +1,5 @@
+# Reviewed false positives. Add one fingerprint per line with a reason; never ignore whole rules.
+#
+# Doc comment example "sk_live_" + 12 hex chars (not a secret) matched Stripe's key pattern.
+# Fixed in 1f3743c by switching our API key prefix to sos_live_; this entry covers the old commit.
+8b73f1da6354832968880e2d8ba9b0c83de08ad9:packages/core/src/modules/auth/application/api-key-service.ts:stripe-access-token:34

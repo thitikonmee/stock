@@ -15,9 +15,14 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@node-rs/argon2": "^2.2.1",
     "@stockos/database": "workspace:^",
     "@stockos/queue": "workspace:^",
     "@stockos/shared": "workspace:^",
-    "kysely": "^0.29.6"
+    "kysely": "^0.29.6",
+    "nodemailer": "^10.0.11"
+  },
+  "devDependencies": {
+    "@types/nodemailer": "^8.0.2"
   }
 }

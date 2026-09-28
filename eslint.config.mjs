@@ -3,15 +3,25 @@ import boundaries from 'eslint-plugin-boundaries';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['**/dist/**', '**/node_modules/**', '**/.turbo/**', 'coverage/**'] },
+  {
+    ignores: [
+      '**/dist/**',
+      '**/node_modules/**',
+      '**/.turbo/**',
+      '**/.next/**',
+      'coverage/**',
+      '**/next-env.d.ts',
+    ],
+  },
   ...tseslint.configs.recommended,
   {
-    files: ['**/*.ts'],
+    files: ['**/*.ts', '**/*.tsx'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       '@typescript-eslint/consistent-type-imports': ['error', { fixStyle: 'inline-type-imports' }],
       'no-console': ['error', { allow: ['error'] }],
+      'no-duplicate-imports': ['error', { includeExports: false, allowSeparateTypeImports: true }],
     },
   },
   {
@@ -47,7 +57,7 @@ export default tseslint.config(
   },
   {
     // CLIs print to stdout by design.
-    files: ['**/src/cli.ts'],
+    files: ['**/src/cli.ts', '**/scripts/**/*.ts'],
     rules: { 'no-console': 'off' },
   },
   {

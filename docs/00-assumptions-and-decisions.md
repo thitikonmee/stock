@@ -78,3 +78,11 @@
 
 ### ADR-013 DI tokens แบบ explicit ใน NestJS
 - **Decision**: inject ด้วย `@Inject(TOKEN)` เสมอ ไม่พึ่ง `emitDecoratorMetadata` → โค้ดทำงานเหมือนกันทั้ง tsc, esbuild (vitest) และ swc
+
+### ADR-014 Web app = BFF; tokens never reach browser JavaScript — 2026-09-28
+- **Decision**: Next.js route handlers (`/api/session/*`, `/api/proxy/*`) hold access/refresh tokens in `HttpOnly; SameSite=Strict` cookies and attach them server-side. CSRF: custom header `x-stockos-csrf: 1` + Origin check on state-changing requests. The POS and integrations keep calling the API directly with bearer/device tokens.
+- **Consequences**: an XSS bug cannot exfiltrate tokens; one extra hop for web requests.
+
+### ADR-015 Trusted proxies by address, not by hop count — 2026-09-28
+- **Context**: `trustProxy: true` trusts the left-most `X-Forwarded-For` entry, which any client can forge to dodge per-IP rate limits.
+- **Decision**: `TRUST_PROXY` (default `loopback,uniquelocal`) — only our own private hops (ALB, web BFF) are trusted; the client IP is read right-to-left.

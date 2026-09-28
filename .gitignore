@@ -9,3 +9,8 @@ coverage/
 .pg-test/
 .DS_Store
 *.log
+.next/
+next-env.d.ts
+.pg-dev/
+playwright-report/
+test-results/

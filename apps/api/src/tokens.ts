@@ -8,3 +8,6 @@ export const READINESS_CHECK = Symbol('READINESS_CHECK');
 
 /** Resolves when every hard dependency (database, later Redis) is reachable. */
 export type ReadinessCheck = () => Promise<void>;
+export const MAILER = Symbol('MAILER');
+/** Public URL of the web app, used in e-mailed links. */
+export const WEB_BASE_URL = Symbol('WEB_BASE_URL');

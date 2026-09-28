@@ -8,7 +8,7 @@ Spec: [api/openapi.yaml](../api/openapi.yaml) (OpenAPI 3.1 — generate จา�
 |---|---|
 | Base URL | `https://api.stockos.co/api/v1` ; webhooks `https://hooks.stockos.co/webhooks/{platform}` (แยก host/process) |
 | Versioning | URL major (`/v1`); เปลี่ยนแบบ additive ไม่ bump; breaking → `/v2` คู่ขนาน ≥ 6 เดือน + `Deprecation`/`Sunset` headers |
-| Auth | `Authorization: Bearer <JWT>` (user), `Authorization: Bearer sk_live_...` (API key), `Authorization: Device <token>` (POS) |
+| Auth | `Authorization: Bearer <JWT>` (user), `Authorization: Bearer sos_live_...` (API key), `Authorization: Device <token>` (POS) |
 | Tenant | มาจาก token claim **เท่านั้น** (`tid`) — ไม่รับ tenant จาก path/header/body (กัน IDOR) ; user หลาย tenant → switch tenant = ขอ token ใหม่ |
 | Request ID | รับ `X-Request-Id` (ถ้าไม่มีสร้าง UUIDv7) → echo กลับ + ใส่ log/trace; W3C `traceparent` รองรับ |
 | Idempotency | **บังคับ** `Idempotency-Key` สำหรับ POST ที่สร้าง/เปลี่ยน stock หรือเงิน (orders, pos/sales, inventory/*, payments, refunds, purchases/receive) ; key เดิม+body เดิม → คืน response เดิม (`Idempotent-Replayed: true`) ; key เดิม+body ต่าง → 422 `IDEMPOTENCY_KEY_REUSED` ; กำลังประมวลผล → 409 `IDEMPOTENCY_IN_PROGRESS` ; เก็บ 24 ชม. |
@@ -42,6 +42,9 @@ Spec: [api/openapi.yaml](../api/openapi.yaml) (OpenAPI 3.1 — generate จา�
 | 403 | `FORBIDDEN`, `PLAN_LIMIT_EXCEEDED`, `STEP_UP_REQUIRED` |
 | 404 | `NOT_FOUND` (ใช้กับ resource ของ tenant อื่นด้วย — ไม่บอกว่ามีอยู่) |
 | 409 | `STOCK_INSUFFICIENT`, `INVALID_STATE_TRANSITION`, `DUPLICATE`, `IDEMPOTENCY_IN_PROGRESS`, `SEQ_GAP` |
+| 401 (auth) | `INVALID_CREDENTIALS`, `ACCOUNT_LOCKED`, `TOKEN_EXPIRED`, `TOKEN_REUSED`, `INVALID_MFA_CODE` |
+| 403 (iam) | `PRIVILEGE_ESCALATION`, `TENANT_INACTIVE` |
+| 422 (rules) | `TENANT_SELECTION_REQUIRED` (meta.tenants), `SYSTEM_ROLE_IMMUTABLE`, `MFA_ALREADY_ENABLED` |
 | 412 | `PRECONDITION_FAILED` (version) |
 | 422 | `IDEMPOTENCY_KEY_REUSED`, `BUSINESS_RULE_VIOLATION` |
 | 429 | `RATE_LIMITED` |
@@ -167,6 +170,17 @@ POST   /webhooks/payments/{provider}
 /billing/subscription  /billing/usage
 /admin/* (platform admin — separate auth realm, ดู 13)
 ```
+
+### Phase 1 endpoints (implemented)
+```
+POST /auth/step-up                     {code} → new token pair with fresh 2FA proof
+GET|POST /api-keys   DELETE /api-keys/:id
+GET|POST /pos-devices   GET|PATCH /pos-devices/:id   POST /pos-devices/:id/registration-code
+POST /pos/devices/register            (public, rate limited)   POST /pos/heartbeat (Device auth)
+GET /notifications?unread=true   POST /notifications/:id/read   POST /notifications/read-all
+GET /billing/usage
+```
+Error codes added: `RATE_LIMITED` (429 + Retry-After), `MFA_ENROLLMENT_REQUIRED`, `STEP_UP_REQUIRED`, `PLAN_LIMIT_EXCEEDED` (403, meta.metric/limit/used)
 
 ### Outbound webhooks (ให้ลูกค้า subscribe) — Phase 3
 Events: `order.created`, `order.updated`, `inventory.changed`, `product.updated` ; signed `X-StockOS-Signature: t=<ts>,v1=<hmac-sha256>` ; retry exp 24 ชม. ; delivery log

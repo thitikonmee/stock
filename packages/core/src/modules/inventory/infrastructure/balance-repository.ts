@@ -120,6 +120,16 @@ export async function ensureBalanceRow(tx: Tx, tenantId: string, warehouseId: st
   }
 }
 
+/**
+ * Apply a warehouse's changed negative-stock policy to its existing balance rows. Does not touch
+ * quantities or versions, so it is not a stock movement and writes no ledger.
+ */
+export async function syncNegativeStockPolicy(tx: Tx, warehouseId: string, allowed: boolean): Promise<void> {
+  await sql`update inventory_balances set negative_allowed = ${allowed} where warehouse_id = ${warehouseId}`.execute(
+    tx,
+  );
+}
+
 export async function readBalances(
   tx: Tx,
   tenantId: string,

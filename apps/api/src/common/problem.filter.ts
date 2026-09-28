@@ -1,6 +1,6 @@
 import { Catch, type ArgumentsHost, type ExceptionFilter } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { Logger } from '@stockos/shared';
+import { RateLimitedError, type Logger } from '@stockos/shared';
 import { toProblem } from './problem';
 
 /** Every error leaves the API as `application/problem+json`. */
@@ -21,6 +21,8 @@ export class ProblemDetailsFilter implements ExceptionFilter {
       );
     }
 
+    if (exception instanceof RateLimitedError)
+      void reply.header('retry-after', String(exception.retryAfterSec));
     void reply
       .status(problem.status)
       .header('content-type', 'application/problem+json; charset=utf-8')

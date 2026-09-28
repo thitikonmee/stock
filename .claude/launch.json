@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "stack",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/dev-stack.mjs"],
+      "port": 3100
+    }
+  ]
+}

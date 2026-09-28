@@ -3,6 +3,7 @@ export const PgErrorCode = {
   UniqueViolation: '23505',
   ForeignKeyViolation: '23503',
   CheckViolation: '23514',
+  InvalidTextRepresentation: '22P02',
   SerializationFailure: '40001',
   DeadlockDetected: '40P01',
   LockNotAvailable: '55P03',

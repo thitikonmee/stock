@@ -1,1 +1,7 @@
+export * as audit from './modules/audit/public-api';
+export * as auth from './modules/auth/public-api';
+export * as billing from './modules/billing/public-api';
+export * as iam from './modules/iam/public-api';
 export * as inventory from './modules/inventory/public-api';
+export * as notifications from './modules/notifications/public-api';
+export * as tenancy from './modules/tenancy/public-api';

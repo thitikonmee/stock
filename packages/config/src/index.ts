@@ -41,6 +41,30 @@ export const EnvSchema = z.object({
         .filter(Boolean),
     ),
   MARKETPLACE_MOCK: bool('false'),
+
+  JWT_ISSUER: z.string().url().default('https://api.stockos.local'),
+  JWT_AUDIENCE: z.string().default('stockos-api'),
+  JWT_KID: z.string().min(1).default('local-1'),
+  /** PEM (PKCS#8) EC P-256 private key file. Generate locally with `pnpm gen:keys`. */
+  JWT_PRIVATE_KEY_PATH: z.string().default('.secrets/jwt-private.pem'),
+  /** Optional JSON file {"kid": "<public PEM>"} of rotated-out keys still accepted for verification. */
+  JWT_PREVIOUS_PUBLIC_KEYS_PATH: z.string().optional(),
+  ACCESS_TOKEN_TTL_SEC: z.coerce.number().int().positive().default(900),
+  REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(30),
+  REFRESH_TOKEN_ABSOLUTE_DAYS: z.coerce.number().int().positive().default(90),
+  PASSWORD_ARGON2_MEMORY_KB: z.coerce.number().int().min(1024).default(65536),
+  /** Proxies whose X-Forwarded-For is trusted (proxy-addr syntax: names, IPs, CIDRs). */
+  TRUST_PROXY: z.string().default('loopback,uniquelocal'),
+  PUBLIC_WEB_BASE_URL: z.string().url().default('http://localhost:3100'),
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().int().positive().default(1025),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASSWORD: z.string().optional(),
+  EMAIL_FROM: z.string().default('StockOS <no-reply@stockos.local>'),
+  /** 32 random bytes, base64. Local only — production uses KMS envelope encryption. */
+  LOCAL_MASTER_KEY_BASE64: z
+    .string()
+    .refine((v) => Buffer.from(v, 'base64').length === 32, 'must be 32 bytes, base64-encoded'),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
