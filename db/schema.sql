@@ -221,7 +221,7 @@ CREATE TABLE api_keys (
   tenant_id       uuid NOT NULL REFERENCES tenants(id),
   id              uuid NOT NULL DEFAULT uuid_generate_v7(),
   name            text NOT NULL,
-  prefix          text NOT NULL UNIQUE,                   -- 'sk_live_ab12cd' แสดงใน UI
+  prefix          text NOT NULL UNIQUE,                   -- 'sos_live_ab12cd' แสดงใน UI
   key_hash        bytea NOT NULL,                         -- sha256(secret) ; secret แสดงครั้งเดียว
   permissions     text[] NOT NULL,                        -- subset ของ permission catalog
   ip_allowlist    cidr[],

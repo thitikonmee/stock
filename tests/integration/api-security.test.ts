@@ -166,7 +166,7 @@ describe('API keys', () => {
   it('shows the secret once and authenticates with narrowed permissions', async () => {
     const created = await createKey({ name: 'ERP sync', permissions: ['product.read', 'inventory.read'] });
     expect(created.status).toBe(201);
-    expect(created.body.secret).toMatch(/^sk_live_[0-9a-f]{12}_/);
+    expect(created.body.secret).toMatch(/^sos_live_[0-9a-f]{12}_/);
 
     const listed = await call(api, 'GET', '/api/v1/api-keys', { token: t.accessToken });
     expect(JSON.stringify(listed.body)).not.toContain(created.body.secret);

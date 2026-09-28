@@ -8,7 +8,7 @@ Spec: [api/openapi.yaml](../api/openapi.yaml) (OpenAPI 3.1 — generate จา�
 |---|---|
 | Base URL | `https://api.stockos.co/api/v1` ; webhooks `https://hooks.stockos.co/webhooks/{platform}` (แยก host/process) |
 | Versioning | URL major (`/v1`); เปลี่ยนแบบ additive ไม่ bump; breaking → `/v2` คู่ขนาน ≥ 6 เดือน + `Deprecation`/`Sunset` headers |
-| Auth | `Authorization: Bearer <JWT>` (user), `Authorization: Bearer sk_live_...` (API key), `Authorization: Device <token>` (POS) |
+| Auth | `Authorization: Bearer <JWT>` (user), `Authorization: Bearer sos_live_...` (API key), `Authorization: Device <token>` (POS) |
 | Tenant | มาจาก token claim **เท่านั้น** (`tid`) — ไม่รับ tenant จาก path/header/body (กัน IDOR) ; user หลาย tenant → switch tenant = ขอ token ใหม่ |
 | Request ID | รับ `X-Request-Id` (ถ้าไม่มีสร้าง UUIDv7) → echo กลับ + ใส่ log/trace; W3C `traceparent` รองรับ |
 | Idempotency | **บังคับ** `Idempotency-Key` สำหรับ POST ที่สร้าง/เปลี่ยน stock หรือเงิน (orders, pos/sales, inventory/*, payments, refunds, purchases/receive) ; key เดิม+body เดิม → คืน response เดิม (`Idempotent-Replayed: true`) ; key เดิม+body ต่าง → 422 `IDEMPOTENCY_KEY_REUSED` ; กำลังประมวลผล → 409 `IDEMPOTENCY_IN_PROGRESS` ; เก็บ 24 ชม. |

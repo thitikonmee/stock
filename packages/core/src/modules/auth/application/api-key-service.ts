@@ -24,14 +24,16 @@ import {
 } from '../../iam/public-api';
 import { assertUsableMembership } from './auth-service';
 
-export const API_KEY_PREFIX = 'sk_live_';
+// Own prefix so secret scanners (and GitHub secret scanning) can recognise leaked StockOS keys —
+// not 'sk_live_', which is Stripe's format and would be reported to the wrong owner.
+export const API_KEY_PREFIX = 'sos_live_';
 const PREFIX_HEX_LENGTH = 12;
 const LAST_USED_WRITE_INTERVAL_SEC = 60;
 
 export interface ApiKey {
   id: string;
   name: string;
-  /** Public identifier shown in the UI, e.g. `sk_live_a1b2c3d4e5f6`. */
+  /** Public identifier shown in the UI, e.g. `sos_live_` + 12 hex chars. */
   prefix: string;
   permissions: PermissionCode[];
   ipAllowlist: string[];
@@ -147,7 +149,7 @@ export class ApiKeyService {
     });
   }
 
-  /** Resolve `sk_live_<prefix>_<secret>` into a Principal. */
+  /** Resolve `sos_live_<prefix>_<secret>` into a Principal. */
   async authenticate(token: string, ip: string | undefined): Promise<Principal> {
     const body = token.startsWith(API_KEY_PREFIX) ? token.slice(API_KEY_PREFIX.length) : '';
     const prefix = body.slice(0, PREFIX_HEX_LENGTH);
