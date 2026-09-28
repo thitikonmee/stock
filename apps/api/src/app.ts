@@ -3,12 +3,20 @@ import { Module, type DynamicModule } from '@nestjs/common';
 import { NestFactory, Reflector } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { sql } from 'kysely';
-import { auth, billing, iam, notifications, tenancy } from '@stockos/core';
+import { auth, billing, catalog, iam, notifications, tenancy } from '@stockos/core';
 import { PgRateLimiter, type Db } from '@stockos/database';
 import { uuidv7, type Logger } from '@stockos/shared';
 import { AuthController } from './auth/auth.controller';
 import { AuthGuard } from './auth/auth.guard';
 import { DEFAULT_RATE_LIMITS, RateLimitGuard, type RateLimits } from './auth/rate-limit.guard';
+import { BarcodesController } from './catalog/barcodes.controller';
+import { ImagesController } from './catalog/images.controller';
+import { JobsController } from './catalog/jobs.controller';
+import { BrandsController, CategoriesController, UnitsController } from './catalog/master-data.controller';
+import { PriceListsController } from './catalog/prices.controller';
+import { ProductsController } from './catalog/products.controller';
+import { SuppliersController } from './catalog/suppliers.controller';
+import { VariantsController } from './catalog/variants.controller';
 import { ProblemDetailsFilter } from './common/problem.filter';
 import { RequestContextInterceptor } from './common/request-context.interceptor';
 import { HealthController } from './health/health.controller';
@@ -36,6 +44,8 @@ export interface AppDeps {
   webBaseUrl?: string;
   /** proxy-addr list of trusted proxies (default: loopback + private ranges). */
   trustProxy?: string;
+  /** Where product images are stored; defaults to a local `.uploads` directory (no S3 needed). */
+  storage?: catalog.StorageConfig;
 }
 
 export interface RegisteredRoute {
@@ -60,6 +70,12 @@ interface Services {
   deviceService: tenancy.DeviceService;
   notificationService: notifications.NotificationService;
   planService: billing.PlanService;
+  catalogMasterDataService: catalog.CatalogMasterDataService;
+  productService: catalog.ProductService;
+  imageService: catalog.ImageService;
+  supplierService: catalog.SupplierService;
+  priceService: catalog.PriceService;
+  importExportService: catalog.ImportExportService;
 }
 
 @Module({})
@@ -81,6 +97,16 @@ class AppModule {
         PosDeviceSessionController,
         NotificationsController,
         BillingController,
+        BrandsController,
+        CategoriesController,
+        UnitsController,
+        ProductsController,
+        VariantsController,
+        BarcodesController,
+        ImagesController,
+        JobsController,
+        SuppliersController,
+        PriceListsController,
       ],
       providers: [
         { provide: DB, useValue: deps.db },
@@ -99,6 +125,12 @@ class AppModule {
         { provide: tenancy.DeviceService, useValue: services.deviceService },
         { provide: notifications.NotificationService, useValue: services.notificationService },
         { provide: billing.PlanService, useValue: services.planService },
+        { provide: catalog.CatalogMasterDataService, useValue: services.catalogMasterDataService },
+        { provide: catalog.ProductService, useValue: services.productService },
+        { provide: catalog.ImageService, useValue: services.imageService },
+        { provide: catalog.SupplierService, useValue: services.supplierService },
+        { provide: catalog.PriceService, useValue: services.priceService },
+        { provide: catalog.ImportExportService, useValue: services.importExportService },
       ],
     };
   }
@@ -107,7 +139,9 @@ class AppModule {
 /** Build the HTTP app (used by main.ts and by tests via `app.inject`). */
 export async function createApp(deps: AppDeps): Promise<NestFastifyApplication> {
   const adapter = new FastifyAdapter({
-    bodyLimit: 1_048_576,
+    // 15MB: covers a base64 product photo (≤5MB decoded) and a multi-thousand-row xlsx import,
+    // behind auth + rate limiting. Still bounded — never unlimited.
+    bodyLimit: 15_728_640,
     requestIdHeader: false,
     // Trust X-Forwarded-For only from our own hops (ALB, web BFF) on private/loopback addresses.
     // Addresses are read right-to-left, so a client cannot spoof its IP by prepending entries.
@@ -128,6 +162,12 @@ export async function createApp(deps: AppDeps): Promise<NestFastifyApplication> 
     if (body === '' || (typeof body === 'string' && body.trim() === '')) return done(null, undefined);
     defaultJsonParser(request, body as string, done);
   });
+  // Raw binary bodies (product catalog xlsx import): no JSON/multipart parsing, just the bytes.
+  fastify.addContentTypeParser(
+    'application/octet-stream',
+    { parseAs: 'buffer', bodyLimit: 15_728_640 },
+    (_request, body, done) => done(null, body),
+  );
 
   const routes: RegisteredRoute[] = [];
   adapter.getInstance().addHook('onRoute', (route) => {
@@ -137,6 +177,8 @@ export async function createApp(deps: AppDeps): Promise<NestFastifyApplication> 
 
   const roleService = new iam.RoleService();
   const authService = new auth.AuthService(deps.db, deps.auth);
+  const productService = new catalog.ProductService();
+  const imageStorage = catalog.createImageStorage(deps.storage);
   const services: Services = {
     authService,
     roleService,
@@ -146,6 +188,12 @@ export async function createApp(deps: AppDeps): Promise<NestFastifyApplication> 
     deviceService: new tenancy.DeviceService(deps.db),
     notificationService: new notifications.NotificationService(),
     planService: new billing.PlanService(),
+    catalogMasterDataService: new catalog.CatalogMasterDataService(),
+    productService,
+    imageService: new catalog.ImageService(imageStorage),
+    supplierService: new catalog.SupplierService(),
+    priceService: new catalog.PriceService(),
+    importExportService: new catalog.ImportExportService(productService),
   };
 
   const app = await NestFactory.create<NestFastifyApplication>(AppModule.register(deps, services), adapter, {

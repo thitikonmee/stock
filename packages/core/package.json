@@ -15,12 +15,16 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.930.0",
     "@node-rs/argon2": "^2.2.1",
     "@stockos/database": "workspace:^",
     "@stockos/queue": "workspace:^",
     "@stockos/shared": "workspace:^",
+    "bwip-js": "^4.10.0",
+    "exceljs": "^4.4.0",
     "kysely": "^0.29.6",
-    "nodemailer": "^10.0.11"
+    "nodemailer": "^10.0.11",
+    "pdf-lib": "^1.17.1"
   },
   "devDependencies": {
     "@types/nodemailer": "^8.0.2"

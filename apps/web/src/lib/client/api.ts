@@ -26,7 +26,7 @@ export function registerStepUpHandler(handler: (() => Promise<boolean>) | null) 
   stepUpHandler = handler;
 }
 
-async function send(url: string, options: RequestOptions): Promise<Response> {
+export async function send(url: string, options: RequestOptions): Promise<Response> {
   return fetch(url, {
     method: options.method ?? 'GET',
     headers: {
@@ -81,6 +81,38 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
+}
+
+/** Upload a raw binary body (e.g. an .xlsx catalog import) and parse the JSON response. */
+export async function apiUpload<T>(path: string, data: ArrayBuffer): Promise<T> {
+  const res = await fetch(`/api/proxy${path}`, {
+    method: 'POST',
+    headers: { 'x-stockos-csrf': '1', 'content-type': 'application/octet-stream' },
+    body: data,
+    credentials: 'same-origin',
+    cache: 'no-store',
+  });
+  if (!res.ok) throw await toError(res);
+  return (await res.json()) as T;
+}
+
+/** Fetch a binary response (PDF label sheet, xlsx export) and save it via the browser. */
+export async function apiDownload(
+  path: string,
+  filename: string,
+  options: RequestOptions = {},
+): Promise<void> {
+  const res = await send(`/api/proxy${path}`, options);
+  if (!res.ok) throw await toError(res);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 /** Session actions (login, signup, mfa, step-up, logout, accept-invite) handled by the BFF. */

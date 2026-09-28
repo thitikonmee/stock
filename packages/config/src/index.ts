@@ -65,6 +65,17 @@ export const EnvSchema = z.object({
   LOCAL_MASTER_KEY_BASE64: z
     .string()
     .refine((v) => Buffer.from(v, 'base64').length === 32, 'must be 32 bytes, base64-encoded'),
+
+  /** Product image storage (docs/02 §Object storage). S3_BUCKET_UPLOADS unset = local disk under
+   *  UPLOADS_LOCAL_DIR (dev, no Docker/S3 needed); set = S3-compatible bucket (AWS S3, MinIO via
+   *  S3_ENDPOINT, Cloudflare R2, ...). */
+  S3_ENDPOINT: z.string().url().optional(),
+  S3_REGION: z.string().default('ap-southeast-7'),
+  S3_ACCESS_KEY_ID: z.string().optional(),
+  S3_SECRET_ACCESS_KEY: z.string().optional(),
+  S3_BUCKET_UPLOADS: z.string().optional(),
+  S3_FORCE_PATH_STYLE: bool('false'),
+  UPLOADS_LOCAL_DIR: z.string().default('.uploads'),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

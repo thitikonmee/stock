@@ -165,8 +165,10 @@ export function Table({ head, children, empty }: { head: string[]; children: Rea
       <table className="w-full text-left text-sm">
         <thead className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
           <tr>
-            {head.map((h) => (
-              <th key={h} className="px-3 py-2 font-medium">
+            {head.map((h, i) => (
+              // Index, not label: `head` is a static, order-stable array and some tables repeat an
+              // empty '' header for a leading checkbox column and a trailing actions column.
+              <th key={i} className="px-3 py-2 font-medium">
                 {h}
               </th>
             ))}
