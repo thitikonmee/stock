@@ -1,0 +1,30 @@
+{
+  "name": "@stockos/database",
+  "version": "0.0.0",
+  "private": true,
+  "type": "commonjs",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "migrate": "tsx src/cli.ts migrate",
+    "migrate:status": "tsx src/cli.ts status",
+    "local-roles": "tsx src/cli.ts local-roles"
+  },
+  "dependencies": {
+    "@stockos/config": "workspace:^",
+    "@stockos/shared": "workspace:^",
+    "kysely": "^0.29.6",
+    "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.23.1",
+    "tsx": "^4.23.15"
+  }
+}

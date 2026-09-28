@@ -1,0 +1,852 @@
+openapi: 3.1.0
+info:
+  title: StockOS Core API
+  version: 1.0.0
+  description: |
+    Core API ของ StockOS (subset ที่เป็น contract หลักของ MVP).
+    - Tenant มาจาก token เท่านั้น
+    - POST ที่แตะ stock/เงิน ต้องมี Idempotency-Key
+    - เงิน/จำนวนเป็น string decimal
+servers:
+  - url: https://api.stockos.co/api/v1
+  - url: http://localhost:3000/api/v1
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Auth
+  - name: Products
+  - name: Inventory
+  - name: Orders
+  - name: POS
+  - name: Channels
+  - name: Webhooks
+
+paths:
+  /auth/login:
+    post:
+      tags: [Auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [identifier, password]
+              properties:
+                identifier: { type: string, description: email หรือเบอร์โทร }
+                password: { type: string, format: password }
+                tenantSlug: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenPair' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '200':
+          description: Rotated token pair
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenPair' }
+        '401': { $ref: '#/components/responses/Problem' }
+
+  /products:
+    get:
+      tags: [Products]
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: categoryId, in: query, schema: { type: string, format: uuid } }
+        - { name: status, in: query, schema: { type: string, enum: [DRAFT, ACTIVE, ARCHIVED] } }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Product page
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Product' } }
+                  page: { $ref: '#/components/schemas/PageInfo' }
+    post:
+      tags: [Products]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductCreate' }
+      responses:
+        '201':
+          description: Created
+          headers:
+            ETag: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /products/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Products]
+      responses:
+        '200':
+          description: OK
+          headers:
+            ETag: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+        '404': { $ref: '#/components/responses/Problem' }
+    patch:
+      tags: [Products]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductUpdate' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+        '412': { $ref: '#/components/responses/Problem' }
+
+  /variants/lookup:
+    get:
+      tags: [Products]
+      parameters:
+        - { name: barcode, in: query, schema: { type: string } }
+        - { name: sku, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Variant
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Variant' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /inventory/balances:
+    get:
+      tags: [Inventory]
+      parameters:
+        - { name: variantId, in: query, schema: { type: string, format: uuid } }
+        - { name: warehouseId, in: query, schema: { type: string, format: uuid } }
+        - { name: lowStock, in: query, schema: { type: boolean } }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Balances
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/InventoryBalance' } }
+                  page: { $ref: '#/components/schemas/PageInfo' }
+
+  /inventory/transactions:
+    get:
+      tags: [Inventory]
+      summary: Stock card (ledger)
+      parameters:
+        - { name: variantId, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: warehouseId, in: query, schema: { type: string, format: uuid } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - { name: bucket, in: query, schema: { $ref: '#/components/schemas/Bucket' } }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Ledger entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/InventoryTransaction' } }
+                  page: { $ref: '#/components/schemas/PageInfo' }
+
+  /inventory/reserve:
+    post:
+      tags: [Inventory]
+      summary: Reserve stock (external API / website)
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [referenceType, referenceId, items]
+              properties:
+                referenceType: { type: string, enum: [ORDER, EXTERNAL] }
+                referenceId: { type: string, format: uuid }
+                ttlSeconds: { type: integer, minimum: 60, maximum: 86400 }
+                items:
+                  type: array
+                  minItems: 1
+                  maxItems: 200
+                  items: { $ref: '#/components/schemas/StockLine' }
+      responses:
+        '201':
+          description: Reserved (all-or-nothing)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MovementResult' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+
+  /inventory/release:
+    post:
+      tags: [Inventory]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reservationIds: { type: array, items: { type: string, format: uuid } }
+                referenceType: { type: string }
+                referenceId: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Released
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MovementResult' }
+
+  /inventory/adjust:
+    post:
+      tags: [Inventory]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [warehouseId, reasonCode, items]
+              properties:
+                warehouseId: { type: string, format: uuid }
+                reasonCode: { type: string, enum: [DAMAGE, LOST, FOUND, COUNT_ERROR, EXPIRED, OTHER] }
+                note: { type: string, maxLength: 500 }
+                items:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [variantId, quantityDelta]
+                    properties:
+                      variantId: { type: string, format: uuid }
+                      quantityDelta: { $ref: '#/components/schemas/Decimal' }
+                      bucket: { type: string, enum: [ON_HAND, DAMAGED], default: ON_HAND }
+      responses:
+        '201':
+          description: Adjustment created (POSTED หรือ PENDING_APPROVAL)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string, format: uuid }
+                  docNo: { type: string }
+                  status: { type: string, enum: [POSTED, PENDING_APPROVAL] }
+
+  /inventory/transfer:
+    post:
+      tags: [Inventory]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fromWarehouseId, toWarehouseId, items]
+              properties:
+                fromWarehouseId: { type: string, format: uuid }
+                toWarehouseId: { type: string, format: uuid }
+                note: { type: string }
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required: [variantId, quantity]
+                    properties:
+                      variantId: { type: string, format: uuid }
+                      quantity: { $ref: '#/components/schemas/Decimal' }
+      responses:
+        '201':
+          description: Transfer requested
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string, format: uuid }
+                  docNo: { type: string }
+                  status: { type: string }
+
+  /orders:
+    get:
+      tags: [Orders]
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+        - { name: channel, in: query, schema: { $ref: '#/components/schemas/ChannelCode' } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - { name: q, in: query, schema: { type: string } }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Orders
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Order' } }
+                  page: { $ref: '#/components/schemas/PageInfo' }
+    post:
+      tags: [Orders]
+      summary: Create order (API / Website channel)
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrderCreate' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /orders/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Orders]
+      responses:
+        '200':
+          description: Order
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /orders/{id}/cancel:
+    post:
+      tags: [Orders]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+                lineIds: { type: array, items: { type: string, format: uuid }, description: partial cancel }
+      responses:
+        '200':
+          description: Cancelled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /pos/sales:
+    post:
+      tags: [POS]
+      summary: Online POS sale (Idempotency-Key = clientTxnId)
+      security:
+        - posSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PosSale' }
+      responses:
+        '201':
+          description: Sale recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /pos/sync/push:
+    post:
+      tags: [POS]
+      security:
+        - deviceAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [batchId, fromSeq, toSeq, events]
+              properties:
+                batchId: { type: string, format: uuid }
+                fromSeq: { type: integer, format: int64 }
+                toSeq: { type: integer, format: int64 }
+                events:
+                  type: array
+                  maxItems: 200
+                  items:
+                    type: object
+                    required: [eventId, seq, type, occurredAt, payload]
+                    properties:
+                      eventId: { type: string, format: uuid }
+                      seq: { type: integer, format: int64 }
+                      type: { type: string, enum: [SALE_COMPLETED, REFUND_COMPLETED, SHIFT_OPENED, SHIFT_CLOSED, CASH_MOVEMENT, CUSTOMER_CREATED] }
+                      occurredAt: { type: string, format: date-time }
+                      payload: { type: object }
+      responses:
+        '200':
+          description: Per-event results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ackSeq: { type: integer, format: int64 }
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        seq: { type: integer, format: int64 }
+                        status: { type: string, enum: [APPLIED, DUPLICATE, CONFLICT, FAILED] }
+                        warnings: { type: array, items: { type: string } }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /pos/sync/pull:
+    get:
+      tags: [POS]
+      security:
+        - deviceAuth: []
+      parameters:
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: scopes, in: query, schema: { type: string, example: 'catalog,prices,promotions,stock,users' } }
+      responses:
+        '200':
+          description: Delta changes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cursor: { type: string }
+                  hasMore: { type: boolean }
+                  changes: { type: array, items: { type: object } }
+
+  /channels/{platform}/connect:
+    post:
+      tags: [Channels]
+      parameters:
+        - name: platform
+          in: path
+          required: true
+          schema: { type: string, enum: [shopee, lazada, tiktok] }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                defaultWarehouseId: { type: string, format: uuid }
+                region: { type: string, default: TH }
+      responses:
+        '200':
+          description: Redirect user to authorizeUrl
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authorizeUrl: { type: string, format: uri }
+                  state: { type: string }
+
+  /channel-mappings/{id}:
+    put:
+      tags: [Channels]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [variantId]
+              properties:
+                variantId: { type: [string, 'null'], format: uuid }
+                quantityMultiplier: { $ref: '#/components/schemas/Decimal' }
+                syncStock: { type: boolean }
+                syncPrice: { type: boolean }
+      responses:
+        '200': { description: Mapping updated }
+        '412': { $ref: '#/components/responses/Problem' }
+
+  /webhooks/{platform}:
+    post:
+      tags: [Webhooks]
+      security: []
+      description: Inbox only — verify signature, store, 200. Processing is async.
+      parameters:
+        - name: platform
+          in: path
+          required: true
+          schema: { type: string, enum: [shopee, lazada, tiktok] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '200': { description: Accepted (including duplicates) }
+        '401': { description: Invalid signature }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+    posSession: { type: http, scheme: bearer, description: Short-lived cashier session token }
+    deviceAuth: { type: apiKey, in: header, name: Authorization, description: 'Device <token>' }
+
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+    Cursor: { name: cursor, in: query, schema: { type: string } }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 8, maxLength: 128 }
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      schema: { type: string, example: '"v3"' }
+
+  responses:
+    Problem:
+      description: Error (RFC 9457)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    Decimal: { type: string, pattern: '^-?\d+(\.\d{1,4})?$', example: '10.000' }
+    ChannelCode: { type: string, enum: [POS, SHOPEE, LAZADA, TIKTOK, WEBSITE, API] }
+    Bucket: { type: string, enum: [ON_HAND, RESERVED, COMMITTED, DAMAGED, INCOMING] }
+
+    Problem:
+      type: object
+      required: [type, title, status, code, requestId]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        code: { type: string }
+        detail: { type: string }
+        requestId: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              path: { type: string }
+              code: { type: string }
+              meta: { type: object }
+
+    PageInfo:
+      type: object
+      properties:
+        nextCursor: { type: [string, 'null'] }
+        hasMore: { type: boolean }
+
+    TokenPair:
+      type: object
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        expiresIn: { type: integer }
+        mfaRequired: { type: boolean }
+
+    Variant:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        sku: { type: string }
+        name: { type: string }
+        optionValues: { type: object, additionalProperties: { type: string } }
+        barcodes: { type: array, items: { type: string } }
+        sellingPrice: { $ref: '#/components/schemas/Decimal' }
+        status: { type: string }
+        version: { type: integer }
+
+    Product:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        brandId: { type: [string, 'null'], format: uuid }
+        categoryId: { type: [string, 'null'], format: uuid }
+        type: { type: string, enum: [STANDARD, BUNDLE, SERVICE, NON_STOCK] }
+        options: { type: array, items: { type: object } }
+        variants: { type: array, items: { $ref: '#/components/schemas/Variant' } }
+        status: { type: string }
+        version: { type: integer }
+
+    ProductCreate:
+      type: object
+      required: [code, name, baseUnitId, variants]
+      properties:
+        code: { type: string }
+        name: { type: string, maxLength: 255 }
+        brandId: { type: string, format: uuid }
+        categoryId: { type: string, format: uuid }
+        baseUnitId: { type: string, format: uuid }
+        type: { type: string, enum: [STANDARD, BUNDLE, SERVICE, NON_STOCK], default: STANDARD }
+        options:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              values: { type: array, items: { type: string } }
+        variants:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [sku]
+            properties:
+              sku: { type: string }
+              optionValues: { type: object, additionalProperties: { type: string } }
+              barcodes: { type: array, items: { type: string } }
+              costPrice: { $ref: '#/components/schemas/Decimal' }
+              sellingPrice: { $ref: '#/components/schemas/Decimal' }
+
+    ProductUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        brandId: { type: string, format: uuid }
+        categoryId: { type: string, format: uuid }
+        status: { type: string, enum: [DRAFT, ACTIVE, ARCHIVED] }
+
+    StockLine:
+      type: object
+      required: [warehouseId, variantId, quantity]
+      properties:
+        warehouseId: { type: string, format: uuid }
+        variantId: { type: string, format: uuid }
+        quantity: { $ref: '#/components/schemas/Decimal' }
+
+    InventoryBalance:
+      type: object
+      properties:
+        warehouseId: { type: string, format: uuid }
+        variantId: { type: string, format: uuid }
+        sku: { type: string }
+        onHand: { $ref: '#/components/schemas/Decimal' }
+        reserved: { $ref: '#/components/schemas/Decimal' }
+        committed: { $ref: '#/components/schemas/Decimal' }
+        available: { $ref: '#/components/schemas/Decimal' }
+        damaged: { $ref: '#/components/schemas/Decimal' }
+        incoming: { $ref: '#/components/schemas/Decimal' }
+        version: { type: integer, format: int64 }
+        updatedAt: { type: string, format: date-time }
+
+    InventoryTransaction:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        movementId: { type: string, format: uuid }
+        warehouseId: { type: string, format: uuid }
+        variantId: { type: string, format: uuid }
+        transactionType: { type: string }
+        bucket: { $ref: '#/components/schemas/Bucket' }
+        quantity: { $ref: '#/components/schemas/Decimal' }
+        beforeQuantity: { $ref: '#/components/schemas/Decimal' }
+        afterQuantity: { $ref: '#/components/schemas/Decimal' }
+        referenceType: { type: string }
+        referenceId: { type: string, format: uuid }
+        channelCode: { type: [string, 'null'] }
+        userId: { type: [string, 'null'], format: uuid }
+        occurredAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+
+    MovementResult:
+      type: object
+      properties:
+        movementId: { type: string, format: uuid }
+        replayed: { type: boolean }
+        lines:
+          type: array
+          items:
+            type: object
+            properties:
+              warehouseId: { type: string, format: uuid }
+              variantId: { type: string, format: uuid }
+              available: { $ref: '#/components/schemas/Decimal' }
+              reservationId: { type: string, format: uuid }
+
+    OrderItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        lineNo: { type: integer }
+        variantId: { type: [string, 'null'], format: uuid }
+        sku: { type: string }
+        name: { type: string }
+        quantity: { $ref: '#/components/schemas/Decimal' }
+        unitPrice: { $ref: '#/components/schemas/Decimal' }
+        discountAmount: { $ref: '#/components/schemas/Decimal' }
+        taxAmount: { $ref: '#/components/schemas/Decimal' }
+        lineTotal: { $ref: '#/components/schemas/Decimal' }
+        fulfilledQty: { $ref: '#/components/schemas/Decimal' }
+        cancelledQty: { $ref: '#/components/schemas/Decimal' }
+
+    Order:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        orderNo: { type: string }
+        channel: { $ref: '#/components/schemas/ChannelCode' }
+        channelAccountId: { type: [string, 'null'], format: uuid }
+        channelOrderId: { type: [string, 'null'] }
+        status: { type: string }
+        paymentStatus: { type: string }
+        fulfillmentStatus: { type: string }
+        inventoryStatus: { type: string }
+        holdReason: { type: [string, 'null'] }
+        customerId: { type: [string, 'null'], format: uuid }
+        items: { type: array, items: { $ref: '#/components/schemas/OrderItem' } }
+        subtotal: { $ref: '#/components/schemas/Decimal' }
+        discountTotal: { $ref: '#/components/schemas/Decimal' }
+        shippingFee: { $ref: '#/components/schemas/Decimal' }
+        taxTotal: { $ref: '#/components/schemas/Decimal' }
+        grandTotal: { $ref: '#/components/schemas/Decimal' }
+        placedAt: { type: string, format: date-time }
+        version: { type: integer }
+
+    OrderCreate:
+      type: object
+      required: [externalRef, items]
+      properties:
+        externalRef: { type: string, description: 'เลข order ของระบบต้นทาง (unique ต่อ API key)' }
+        customer:
+          type: object
+          properties:
+            name: { type: string }
+            phone: { type: string }
+            email: { type: string, format: email }
+        warehouseId: { type: string, format: uuid }
+        paid: { type: boolean, default: false }
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [variantId, quantity, unitPrice]
+            properties:
+              variantId: { type: string, format: uuid }
+              quantity: { $ref: '#/components/schemas/Decimal' }
+              unitPrice: { $ref: '#/components/schemas/Decimal' }
+              discountAmount: { $ref: '#/components/schemas/Decimal' }
+        shippingFee: { $ref: '#/components/schemas/Decimal' }
+        shippingAddress: { type: object }
+
+    PosSale:
+      type: object
+      required: [clientTxnId, deviceSeq, receiptNo, shiftId, occurredAt, items, payments, totals]
+      properties:
+        clientTxnId: { type: string, format: uuid }
+        deviceSeq: { type: integer, format: int64 }
+        receiptNo: { type: string }
+        shiftId: { type: string, format: uuid }
+        occurredAt: { type: string, format: date-time }
+        customerId: { type: string, format: uuid }
+        items:
+          type: array
+          items:
+            type: object
+            required: [variantId, quantity, unitPrice]
+            properties:
+              variantId: { type: string, format: uuid }
+              quantity: { $ref: '#/components/schemas/Decimal' }
+              unitPrice: { $ref: '#/components/schemas/Decimal' }
+              discountAmount: { $ref: '#/components/schemas/Decimal' }
+              promotionIds: { type: array, items: { type: string, format: uuid } }
+        payments:
+          type: array
+          items:
+            type: object
+            required: [method, amount]
+            properties:
+              method: { type: string, enum: [CASH, CREDIT_CARD, DEBIT_CARD, PROMPTPAY, QR, BANK_TRANSFER, VOUCHER] }
+              amount: { $ref: '#/components/schemas/Decimal' }
+              tenderedAmount: { $ref: '#/components/schemas/Decimal' }
+              providerRef: { type: string }
+        totals:
+          type: object
+          description: server re-computes with pos-engine and compares
+          properties:
+            subtotal: { $ref: '#/components/schemas/Decimal' }
+            discountTotal: { $ref: '#/components/schemas/Decimal' }
+            taxTotal: { $ref: '#/components/schemas/Decimal' }
+            rounding: { $ref: '#/components/schemas/Decimal' }
+            grandTotal: { $ref: '#/components/schemas/Decimal' }
+        managerOverrideToken: { type: string, description: 'สำหรับขายเกิน stock / ส่วนลดเกิน limit' }

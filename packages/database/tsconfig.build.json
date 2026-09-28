@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "customConditions": []
+  },
+  "exclude": ["src/**/*.spec.ts", "src/cli.ts"]
+}

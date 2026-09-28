@@ -1,0 +1,23 @@
+{
+  "name": "@stockos/queue",
+  "version": "0.0.0",
+  "private": true,
+  "type": "commonjs",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@stockos/database": "workspace:^",
+    "@stockos/shared": "workspace:^",
+    "bullmq": "^6.3.9",
+    "kysely": "^0.29.6"
+  }
+}

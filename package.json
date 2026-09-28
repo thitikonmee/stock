@@ -1,0 +1,39 @@
+{
+  "name": "stockos",
+  "private": true,
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "lint": "eslint .",
+    "typecheck": "turbo run typecheck",
+    "test": "vitest run --project unit",
+    "test:unit": "vitest run --project unit",
+    "test:int": "vitest run --project integration",
+    "test:concurrency": "vitest run --project concurrency",
+    "test:all": "vitest run",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:migrate": "pnpm --filter @stockos/database migrate",
+    "db:status": "pnpm --filter @stockos/database migrate:status",
+    "db:local-roles": "pnpm --filter @stockos/database local-roles"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "@types/pg": "^8.23.1",
+    "embedded-postgres": "16.14.0-beta.17",
+    "eslint": "^10.11.0",
+    "eslint-import-resolver-typescript": "^4.4.5",
+    "eslint-plugin-boundaries": "^7.2.0",
+    "kysely": "^0.29.6",
+    "pg": "^8.23.0",
+    "prettier": "^3.9.9",
+    "turbo": "^2.11.5",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.70.1",
+    "vitest": "^5.0.2"
+  }
+}

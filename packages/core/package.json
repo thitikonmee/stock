@@ -1,0 +1,23 @@
+{
+  "name": "@stockos/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "commonjs",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@stockos/database": "workspace:^",
+    "@stockos/queue": "workspace:^",
+    "@stockos/shared": "workspace:^",
+    "kysely": "^0.29.6"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "name": "@stockos/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc-watch -p tsconfig.build.json --onSuccess \"node dist/main.js\"",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@nestjs/common": "^12.1.0",
+    "@nestjs/core": "^12.1.0",
+    "@nestjs/platform-fastify": "^12.1.0",
+    "@stockos/config": "workspace:^",
+    "@stockos/core": "workspace:^",
+    "@stockos/database": "workspace:^",
+    "@stockos/shared": "workspace:^",
+    "fastify": "^5.12.5",
+    "kysely": "^0.29.6",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "tsc-watch": "^7.2.1"
+  }
+}
