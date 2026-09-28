@@ -1,0 +1,251 @@
+import { sql } from 'kysely';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { registeredRoutes } from '@stockos/api/app';
+import { iam } from '@stockos/core';
+import { platformTx } from '@stockos/database';
+import { addMember, call, createTestApi, signup, type Api, type SignedUpTenant } from '../support/api';
+import { createTestDatabase, type TestDatabase } from '../support/test-db';
+
+let db: TestDatabase;
+let api: Api;
+let a: SignedUpTenant;
+let b: SignedUpTenant;
+
+beforeAll(async () => {
+  db = await createTestDatabase();
+  api = await createTestApi(db);
+  a = await signup(api, 'A');
+  b = await signup(api, 'B');
+});
+afterAll(async () => {
+  await api.close();
+  await db.drop();
+});
+
+/** Reviewed list of unauthenticated endpoints. Adding a public route must update this list. */
+const PUBLIC_ROUTES = new Set([
+  'GET /health',
+  'GET /health/ready',
+  'POST /api/v1/auth/signup',
+  'POST /api/v1/auth/login',
+  'POST /api/v1/auth/mfa/verify',
+  'POST /api/v1/auth/refresh',
+  'POST /api/v1/auth/invitations/accept',
+]);
+
+type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+const routes = () =>
+  registeredRoutes(api).map((r) => ({ method: r.method as Method, url: r.url, key: `${r.method} ${r.url}` }));
+
+describe('access policy coverage (generated from every registered route)', () => {
+  it('requires a token on every non-public route', async () => {
+    const all = routes();
+    expect(all.length).toBeGreaterThan(15);
+    expect([...PUBLIC_ROUTES].filter((k) => !all.some((r) => r.key === k))).toEqual([]);
+
+    for (const r of all.filter((r) => !PUBLIC_ROUTES.has(r.key))) {
+      const url = r.url.replace(':id', '00000000-0000-7000-8000-000000000000');
+      const res = await call(api, r.method, url, { body: {} });
+      expect({ route: r.key, status: res.status }).toEqual({ route: r.key, status: 401 });
+      const bad = await call(api, r.method, url, { body: {}, token: 'not-a-jwt' });
+      expect({ route: r.key, status: bad.status }).toEqual({ route: r.key, status: 401 });
+    }
+  });
+
+  it('returns 404 — never another tenant’s data — for every route with an :id', async () => {
+    const [branch] = (await call(api, 'GET', '/api/v1/branches', { token: a.accessToken })).body;
+    const [warehouse] = (await call(api, 'GET', '/api/v1/warehouses', { token: a.accessToken })).body;
+    const [role] = (await call(api, 'GET', '/api/v1/roles', { token: a.accessToken })).body;
+    const member = await addMember(api, a, [{ roleCode: 'VIEWER' }]);
+    // Resource of tenant A for each route prefix; a new :id route must be added here.
+    const idOfA: Record<string, string> = {
+      '/api/v1/branches/:id': branch.id,
+      '/api/v1/warehouses/:id': warehouse.id,
+      '/api/v1/roles/:id': role.id,
+      '/api/v1/users/:id': member.membershipId,
+      '/api/v1/users/:id/roles': member.membershipId,
+    };
+
+    const withId = routes().filter((r) => r.url.includes(':id'));
+    expect(withId.map((r) => r.url).filter((u) => !(u in idOfA))).toEqual([]);
+
+    for (const r of withId) {
+      const url = r.url.replace(':id', idOfA[r.url]!);
+      const res = await call(api, r.method, url, {
+        token: b.accessToken, // tenant B's owner: every permission, wrong tenant
+        body: r.method === 'PUT' ? { roles: [] } : {},
+        headers: { 'if-match': '"v1"' },
+      });
+      expect({ route: r.key, status: res.status }).toEqual({ route: r.key, status: 404 });
+    }
+    // And tenant A's data is untouched.
+    expect(
+      (await call(api, 'GET', `/api/v1/users/${member.membershipId}`, { token: a.accessToken })).status,
+    ).toBe(200);
+  });
+});
+
+describe('role-based access', () => {
+  it('lets a cashier sell but not manage users, roles or warehouses', async () => {
+    const cashier = await addMember(api, a, [{ roleCode: 'CASHIER' }]);
+    const me = await call(api, 'GET', '/api/v1/me', { token: cashier.accessToken });
+    const perms = me.body.grants.map((g: { permission: string }) => g.permission);
+    expect(perms).toContain('pos.sell');
+    expect(perms).not.toContain('user.read');
+
+    expect((await call(api, 'GET', '/api/v1/users', { token: cashier.accessToken })).status).toBe(403);
+    expect(
+      (
+        await call(api, 'POST', '/api/v1/warehouses', {
+          token: cashier.accessToken,
+          body: { code: 'X', name: 'X' },
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await call(api, 'POST', '/api/v1/roles', {
+          token: cashier.accessToken,
+          body: { code: 'X', name: 'X', permissions: [] },
+        })
+      ).status,
+    ).toBe(403);
+    // Reading the org structure is allowed to every member.
+    expect((await call(api, 'GET', '/api/v1/branches', { token: cashier.accessToken })).status).toBe(200);
+  });
+
+  it('scopes a manager to one branch', async () => {
+    const [hq] = (await call(api, 'GET', '/api/v1/branches', { token: a.accessToken })).body;
+    const manager = await addMember(api, a, [{ roleCode: 'MANAGER', scopeType: 'BRANCH', scopeId: hq.id }]);
+    const me = await call(api, 'GET', '/api/v1/me', { token: manager.accessToken });
+    expect(
+      new Set(
+        me.body.grants.map((g: { scopeType: string; scopeId: string }) => `${g.scopeType}:${g.scopeId}`),
+      ),
+    ).toEqual(new Set([`BRANCH:${hq.id}`]));
+  });
+
+  it('rejects scopes pointing at unknown or foreign branches', async () => {
+    const [bBranch] = (await call(api, 'GET', '/api/v1/branches', { token: b.accessToken })).body;
+    const roles = (await call(api, 'GET', '/api/v1/roles', { token: a.accessToken })).body;
+    const res = await call(api, 'POST', '/api/v1/users/invitations', {
+      token: a.accessToken,
+      body: {
+        email: 'scoped@example.com',
+        roles: [
+          {
+            roleId: roles.find((r: { code: string }) => r.code === 'MANAGER').id,
+            scopeType: 'BRANCH',
+            scopeId: bBranch.id,
+          },
+        ],
+      },
+    });
+    expect(res).toMatchObject({ status: 400, body: { code: 'VALIDATION_FAILED' } });
+  });
+});
+
+describe('privilege escalation guards', () => {
+  let admin: Awaited<ReturnType<typeof addMember>>;
+  let roles: { id: string; code: string; version: number }[];
+
+  beforeAll(async () => {
+    admin = await addMember(api, a, [{ roleCode: 'ADMIN' }]);
+    roles = (await call(api, 'GET', '/api/v1/roles', { token: a.accessToken })).body;
+  });
+  const roleId = (code: string) => roles.find((r) => r.code === code)!.id;
+
+  it('cannot create a role with permissions the admin does not hold', async () => {
+    const res = await call(api, 'POST', '/api/v1/roles', {
+      token: admin.accessToken,
+      body: { code: 'SNEAKY', name: 'Sneaky', permissions: ['billing.manage'] },
+    });
+    expect(res).toMatchObject({ status: 403, body: { code: 'PRIVILEGE_ESCALATION' } });
+  });
+
+  it('cannot hand out OWNER, change their own roles, or touch the owner', async () => {
+    const other = await addMember(api, a, [{ roleCode: 'VIEWER' }]);
+    const owner = (await call(api, 'GET', '/api/v1/users', { token: a.accessToken })).body.find(
+      (m: { isOwner: boolean }) => m.isOwner,
+    );
+
+    const giveOwner = await call(api, 'PUT', `/api/v1/users/${other.membershipId}/roles`, {
+      token: admin.accessToken,
+      body: { roles: [{ roleId: roleId('OWNER') }] },
+    });
+    const self = await call(api, 'PUT', `/api/v1/users/${admin.membershipId}/roles`, {
+      token: admin.accessToken,
+      body: { roles: [{ roleId: roleId('VIEWER') }] },
+    });
+    const demoteOwner = await call(api, 'PUT', `/api/v1/users/${owner.membershipId}/roles`, {
+      token: admin.accessToken,
+      body: { roles: [{ roleId: roleId('VIEWER') }] },
+    });
+    for (const res of [giveOwner, self, demoteOwner])
+      expect(res).toMatchObject({ status: 403, body: { code: 'PRIVILEGE_ESCALATION' } });
+
+    // A legitimate change works and is audited.
+    const ok = await call(api, 'PUT', `/api/v1/users/${other.membershipId}/roles`, {
+      token: admin.accessToken,
+      body: { roles: [{ roleId: roleId('CASHIER') }] },
+    });
+    expect(ok.status).toBe(200);
+    const audit = await platformTx(db.platform, (tx) =>
+      sql<{ n: number }>`select count(*)::int as n from audit_logs
+                          where action = 'membership.roles.replace' and resource_id = ${other.membershipId}`.execute(
+        tx,
+      ),
+    );
+    expect(audit.rows[0]!.n).toBe(1);
+  });
+
+  it('edits custom roles with optimistic locking and cannot touch system roles', async () => {
+    const created = await call(api, 'POST', '/api/v1/roles', {
+      token: admin.accessToken,
+      body: { code: 'STOCK_CLERK', name: 'Stock clerk', permissions: ['inventory.read', 'inventory.count'] },
+    });
+    expect(created.status).toBe(201);
+
+    const noIfMatch = await call(api, 'PATCH', `/api/v1/roles/${created.body.id}`, {
+      token: admin.accessToken,
+      body: { name: 'X' },
+    });
+    expect(noIfMatch.status).toBe(400);
+    const ok = await call(api, 'PATCH', `/api/v1/roles/${created.body.id}`, {
+      token: admin.accessToken,
+      headers: { 'if-match': '"v1"' },
+      body: { permissions: ['inventory.read'] },
+    });
+    expect(ok).toMatchObject({ status: 200, body: { version: 2, permissions: ['inventory.read'] } });
+    expect(ok.headers['etag']).toBe('"v2"');
+    const stale = await call(api, 'PATCH', `/api/v1/roles/${created.body.id}`, {
+      token: admin.accessToken,
+      headers: { 'if-match': '"v1"' },
+      body: { name: 'Stale' },
+    });
+    expect(stale).toMatchObject({ status: 412, body: { code: 'PRECONDITION_FAILED' } });
+
+    const system = await call(api, 'PATCH', `/api/v1/roles/${roleId('CASHIER')}`, {
+      token: admin.accessToken,
+      headers: { 'if-match': '"v1"' },
+      body: { permissions: ['pos.sell', 'pos.refund'] },
+    });
+    expect(system).toMatchObject({ status: 422, body: { code: 'SYSTEM_ROLE_IMMUTABLE' } });
+  });
+});
+
+describe('permission catalog', () => {
+  it('matches the permissions table seeded by migrations', async () => {
+    const { rows } = await platformTx(db.platform, (tx) =>
+      sql<{
+        code: string;
+        is_dangerous: boolean;
+      }>`select code, is_dangerous from permissions order by code`.execute(tx),
+    );
+    expect(rows).toEqual(
+      [...iam.PERMISSION_CATALOG]
+        .map((p) => ({ code: p.code, is_dangerous: p.dangerous }))
+        .sort((x, y) => x.code.localeCompare(y.code)),
+    );
+  });
+});

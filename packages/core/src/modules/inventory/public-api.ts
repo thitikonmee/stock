@@ -4,4 +4,4 @@ export { InsufficientStockError } from './domain/errors';
 export { BUCKETS, LEDGER_TRANSACTION_TYPES, OPERATIONS, isOperation } from './domain/operations';
 export type { Bucket, Operation, OperationSpec } from './domain/operations';
 export type { BalanceSnapshot, MovementCommand, MovementLineInput, MovementResult } from './domain/types';
-export { readBalances } from './infrastructure/balance-repository';
+export { readBalances, syncNegativeStockPolicy } from './infrastructure/balance-repository';

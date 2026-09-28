@@ -20,6 +20,7 @@ pnpm lint && pnpm typecheck && pnpm build
 
 ```bash
 cp .env.example .env
+pnpm gen:keys               # JWT signing key (.secrets/) + prints LOCAL_MASTER_KEY_BASE64 for .env
 pnpm db:migrate            # ใช้ DATABASE_URL_ADMIN
 pnpm db:local-roles        # ตั้งรหัสผ่าน role สำหรับ local เท่านั้น
 pnpm build && node apps/api/dist/main.js   # หรือ pnpm --filter @stockos/api dev

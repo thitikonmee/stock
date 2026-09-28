@@ -47,7 +47,7 @@ export default tseslint.config(
   },
   {
     // CLIs print to stdout by design.
-    files: ['**/src/cli.ts'],
+    files: ['**/src/cli.ts', '**/scripts/**/*.ts'],
     rules: { 'no-console': 'off' },
   },
   {

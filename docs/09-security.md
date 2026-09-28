@@ -85,3 +85,11 @@ async adjust(@Body() dto: AdjustDto, @Ctx() ctx: RequestContext) { ... }
 - Data subject request: export/erase → erase = anonymize (ชื่อ → "ลบแล้ว", เบอร์ → hash) โดยคง order/tax record (กฎหมายบัญชี/ภาษีต้องเก็บ 5–7 ปี)
 - Data residency: primary ในไทย (ap-southeast-7); breach notification ภายใน 72 ชม. (runbook)
 - Access log ของ platform admin ที่เข้าข้อมูล tenant (impersonation) → แจ้ง tenant ใน audit log
+
+## Implementation notes (Phase 1, 2026-09-28)
+- **JWT**: ES256 implemented on `node:crypto` (`packages/core/src/modules/auth/infrastructure/jwt.ts`) — accepts only `alg: ES256` with a known `kid`, always checks `iss`/`aud`/`exp`; rotated keys stay valid via `JWT_PREVIOUS_PUBLIC_KEYS_PATH`
+- **Every request** re-checks the session (`user_sessions.revoked_at`), membership status and tenant status → logout / suspension take effect immediately, not after the 15-minute token lifetime
+- **Refresh reuse**: a rotated token presented again after a 10 s grace window revokes the whole family; within the window (double submit from one client) it is rejected without revoking
+- **Login before tenant context**: `auth_user_memberships()` is a narrow `SECURITY DEFINER` function owned by `stockos_platform`; invitation tokens embed the tenant id so acceptance runs under that tenant's RLS
+- **Fail-closed routes**: the global `AuthGuard` rejects any route without `@Public` / `@Authenticated` / `@RequirePermission`; `tests/integration/api-access.test.ts` walks every registered route (401 without token, 404 cross-tenant)
+- **TOTP**: RFC 6238, ±1 step, replay-protected by `users.mfa_last_step`; seed sealed with AES-256-GCM bound to the user id

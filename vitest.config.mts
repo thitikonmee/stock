@@ -10,6 +10,7 @@ const alias = {
   '@stockos/database': pkg('database'),
   '@stockos/queue': pkg('queue'),
   '@stockos/core': pkg('core'),
+  '@stockos/api': resolve(import.meta.dirname, 'apps', 'api', 'src'),
 };
 
 const dbProject = {

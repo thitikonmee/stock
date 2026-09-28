@@ -1,0 +1,16 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node"],
+    "paths": {
+      "@stockos/shared": ["../packages/shared/src/index.ts"],
+      "@stockos/config": ["../packages/config/src/index.ts"],
+      "@stockos/database": ["../packages/database/src/index.ts"],
+      "@stockos/queue": ["../packages/queue/src/index.ts"],
+      "@stockos/core": ["../packages/core/src/index.ts"],
+      "@stockos/api/*": ["../apps/api/src/*"]
+    }
+  },
+  "include": ["**/*.ts"]
+}

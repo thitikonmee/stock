@@ -9,7 +9,7 @@
     "build": "turbo run build",
     "dev": "turbo run dev --parallel",
     "lint": "eslint .",
-    "typecheck": "turbo run typecheck",
+    "typecheck": "turbo run typecheck && tsc -p tests/tsconfig.json",
     "test": "vitest run --project unit",
     "test:unit": "vitest run --project unit",
     "test:int": "vitest run --project integration",
@@ -19,9 +19,13 @@
     "format:check": "prettier --check .",
     "db:migrate": "pnpm --filter @stockos/database migrate",
     "db:status": "pnpm --filter @stockos/database migrate:status",
-    "db:local-roles": "pnpm --filter @stockos/database local-roles"
+    "db:local-roles": "pnpm --filter @stockos/database local-roles",
+    "gen:keys": "tsx apps/api/scripts/gen-keys.ts"
   },
   "devDependencies": {
+    "@nestjs/common": "^12.1.0",
+    "@nestjs/core": "^12.1.0",
+    "@nestjs/platform-fastify": "^12.1.0",
     "@types/node": "^26.6.3",
     "@types/pg": "^8.23.1",
     "embedded-postgres": "16.14.0-beta.17",
@@ -31,6 +35,8 @@
     "kysely": "^0.29.6",
     "pg": "^8.23.0",
     "prettier": "^3.9.9",
+    "reflect-metadata": "^0.2.2",
+    "tsx": "^4.23.15",
     "turbo": "^2.11.5",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.70.1",

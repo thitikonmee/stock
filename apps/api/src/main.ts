@@ -4,14 +4,21 @@ import { loadDotEnv, loadEnv } from '@stockos/config';
 import { createDb } from '@stockos/database';
 import { createLogger } from '@stockos/shared';
 import { createApp } from './app';
+import { authConfigFromEnv } from './auth-config';
 
 async function bootstrap() {
-  loadDotEnv(resolve(__dirname, '..', '..', '..'));
+  const repoRoot = resolve(__dirname, '..', '..', '..');
+  loadDotEnv(repoRoot);
   const env = loadEnv();
   const logger = createLogger('api', env.LOG_LEVEL);
   const db = createDb(env.DATABASE_URL, { max: env.DB_POOL_MAX, applicationName: 'api' });
 
-  const app = await createApp({ db, logger, corsOrigins: env.CORS_ORIGINS });
+  const app = await createApp({
+    db,
+    logger,
+    auth: authConfigFromEnv(env, repoRoot),
+    corsOrigins: env.CORS_ORIGINS,
+  });
   app.enableShutdownHooks();
 
   const shutdown = async (signal: string) => {

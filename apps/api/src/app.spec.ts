@@ -1,11 +1,12 @@
 import 'reflect-metadata';
+import { generateKeyPairSync } from 'node:crypto';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Db } from '@stockos/database';
 import { createLogger } from '@stockos/shared';
 import { createApp } from './app';
 import { toProblem } from './common/problem';
-import { inventory } from '@stockos/core';
+import { auth, inventory } from '@stockos/core';
 
 describe('api app', () => {
   const healthy = { value: true };
@@ -13,8 +14,22 @@ describe('api app', () => {
 
   beforeAll(async () => {
     app = await createApp({
-      db: {} as Db, // no route touches the database yet
+      db: {} as Db, // these tests only hit routes that never reach the database
       logger: createLogger('test', 'silent'),
+      auth: {
+        ...auth.DEFAULT_AUTH_TIMINGS,
+        jwt: new auth.JwtService(
+          {
+            currentKid: 'k',
+            privateKeyPem: generateKeyPairSync('ec', { namedCurve: 'P-256' })
+              .privateKey.export({ type: 'pkcs8', format: 'pem' })
+              .toString(),
+          },
+          { issuer: 'https://api.stockos.test', audience: 'stockos-api' },
+        ),
+        hasher: new auth.PasswordHasher({ memoryCost: 1024, timeCost: 1, parallelism: 1 }),
+        secretBox: new auth.SecretBox(Buffer.alloc(32)),
+      },
       readinessCheck: async () => {
         if (!healthy.value) throw new Error('connection refused');
       },

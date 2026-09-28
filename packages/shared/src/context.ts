@@ -6,7 +6,10 @@ export interface RequestContext {
   requestId: string;
   traceId?: string;
   tenantId?: string;
-  actor?: { type: ActorType; id?: string };
+  /** For USER actors `id` is the user id; `membershipId` identifies them inside the tenant. */
+  actor?: { type: ActorType; id?: string; membershipId?: string };
+  ip?: string;
+  userAgent?: string;
 }
 
 const storage = new AsyncLocalStorage<RequestContext>();

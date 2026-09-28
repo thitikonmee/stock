@@ -15,6 +15,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@node-rs/argon2": "^2.2.1",
     "@stockos/database": "workspace:^",
     "@stockos/queue": "workspace:^",
     "@stockos/shared": "workspace:^",
