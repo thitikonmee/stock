@@ -4,3 +4,4 @@ export * from './tenant-tx';
 export * from './pg-errors';
 export * from './migrator';
 export * from './paths';
+export * from './rate-limiter';

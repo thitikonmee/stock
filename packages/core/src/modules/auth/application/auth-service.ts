@@ -4,21 +4,23 @@ import {
   BusinessRuleError,
   ConflictError,
   ForbiddenError,
-  UnauthenticatedError,
-  ValidationError,
   isUuid,
+  sha256,
+  UnauthenticatedError,
   uuidv7,
+  ValidationError,
 } from '@stockos/shared';
 import { recordAudit } from '../../audit/public-api';
+import { PlanService } from '../../billing/public-api';
 import {
   createSystemRoles,
   loadMembershipAccess,
   replaceAssignments,
+  type MembershipAccess,
   type Principal,
 } from '../../iam/public-api';
 import type { JwtService } from '../infrastructure/jwt';
 import type { PasswordHasher } from '../infrastructure/password';
-import { sha256 } from '../infrastructure/opaque-token';
 import type { SecretBox } from '../infrastructure/secret-box';
 import { base32Encode, generateTotpSecret, otpauthUri, verifyTotp } from '../infrastructure/totp';
 import { issueSession, revokeFamily, type SessionTtls, type TokenPair } from './sessions';
@@ -28,6 +30,8 @@ export interface AuthConfig extends SessionTtls {
   hasher: PasswordHasher;
   secretBox: SecretBox;
   mfaChallengeTtlSec: number;
+  /** Dangerous actions need a 2FA proof at most this old (users who have 2FA). */
+  stepUpMaxAgeSec: number;
   maxFailedAttempts: number;
   lockoutMinutes: number;
   /** A refresh token presented again within this window is treated as a client race, not theft. */
@@ -40,6 +44,7 @@ export const DEFAULT_AUTH_TIMINGS = {
   refreshTokenTtlSec: 30 * 24 * 3600,
   refreshAbsoluteTtlSec: 90 * 24 * 3600,
   mfaChallengeTtlSec: 5 * 60,
+  stepUpMaxAgeSec: 15 * 60,
   maxFailedAttempts: 5,
   lockoutMinutes: 15,
   refreshReuseGraceSec: 10,
@@ -99,6 +104,7 @@ export class AuthService {
         );
         await sql`insert into tenant_memberships (tenant_id, id, user_id, status, is_owner)
                   values (${tenantId}, ${membershipId}, ${userId}, 'ACTIVE', true)`.execute(tx);
+        await new PlanService().startTrial(tx, tenantId);
         const roles = await createSystemRoles(tx, tenantId);
         await replaceAssignments(
           tx,
@@ -263,6 +269,7 @@ export class AuthService {
   }
 
   async logout(principal: Principal): Promise<void> {
+    if (!principal.sessionId) return; // API keys have no session; revoke the key instead
     await tenantTx(this.db, principal.tenantId, async (tx) => {
       const { rows } = await sql<{
         family_id: string;
@@ -292,25 +299,64 @@ export class AuthService {
          where s.id = ${sid} and s.revoked_at is null and u.status = 'ACTIVE'`.execute(tx);
       if (rows.length === 0) throw new UnauthenticatedError();
       const access = await loadMembershipAccess(tx, mid);
-      if (!access || access.userId !== sub || access.membershipStatus !== 'ACTIVE')
-        throw new UnauthenticatedError();
-      if (!USABLE_TENANT_STATUSES.has(access.tenantStatus)) {
-        throw new ForbiddenError(
-          'This company account is not active',
-          { status: access.tenantStatus },
-          'TENANT_INACTIVE',
-        );
-      }
+      assertUsableMembership(access, sub);
       return {
+        kind: 'USER',
         userId: sub,
         tenantId: tid,
         membershipId: mid,
         sessionId: sid,
+        apiKeyId: null,
         isOwner: access.isOwner,
         grants: access.grants,
         amr: Array.isArray(claims['amr']) ? claims['amr'].map(String) : [],
         authTime: typeof claims['auth_time'] === 'number' ? claims['auth_time'] : 0,
+        mfaEnabled: access.mfaEnabled,
+        mfaEnforced: access.mfaEnforced,
       };
+    });
+  }
+
+  /**
+   * Step-up: prove 2FA again to unlock dangerous actions. Issues a new token pair in the same
+   * session family with a fresh auth_time and `otp` in amr.
+   */
+  async stepUp(principal: Principal, code: string): Promise<TokenPair> {
+    if (principal.kind !== 'USER' || !principal.sessionId) throw new UnauthenticatedError();
+    const user = await this.loadUser(principal.userId);
+    if (!user?.mfa_enabled || !user.mfa_totp_secret_enc) {
+      throw new BusinessRuleError('MFA_NOT_ENABLED', 'Turn on two-factor authentication first');
+    }
+    const step = verifyTotp(this.config.secretBox.open(user.mfa_totp_secret_enc, `totp:${user.id}`), code);
+    if (step === null || !(await this.claimTotpStep(user.id, step))) {
+      await this.recordFailure(user.id);
+      throw new UnauthenticatedError('INVALID_MFA_CODE', 'Invalid verification code');
+    }
+    return tenantTx(this.db, principal.tenantId, async (tx) => {
+      const { rows } = await sql<{ family_id: string; family_expires_at: Date }>`
+        select family_id, family_expires_at from user_sessions
+         where id = ${principal.sessionId} and revoked_at is null`.execute(tx);
+      const session = rows[0];
+      if (!session) throw new UnauthenticatedError();
+      await recordAudit(tx, {
+        tenantId: principal.tenantId,
+        action: 'auth.step_up',
+        resourceType: 'user',
+        resourceId: user.id,
+      });
+      return issueSession(
+        tx,
+        this.config.jwt,
+        this.config,
+        {
+          userId: user.id,
+          tenantId: principal.tenantId,
+          membershipId: principal.membershipId,
+          amr: ['pwd', 'otp'],
+          authTime: new Date(),
+        },
+        { familyId: session.family_id, familyExpiresAt: session.family_expires_at },
+      );
     });
   }
 
@@ -475,4 +521,26 @@ export function normalizeEmail(email: string): string {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) || value.length > 254)
     throw new ValidationError('Invalid e-mail address');
   return value;
+}
+
+/** Membership may act: exists, belongs to the credential's user, active, in a usable tenant. */
+export function assertUsableMembership(
+  access: MembershipAccess | null,
+  userId: string,
+): asserts access is MembershipAccess {
+  if (
+    !access ||
+    access.userId !== userId ||
+    access.membershipStatus !== 'ACTIVE' ||
+    access.userStatus !== 'ACTIVE'
+  ) {
+    throw new UnauthenticatedError();
+  }
+  if (!USABLE_TENANT_STATUSES.has(access.tenantStatus)) {
+    throw new ForbiddenError(
+      'This company account is not active',
+      { status: access.tenantStatus },
+      'TENANT_INACTIVE',
+    );
+  }
 }

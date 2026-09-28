@@ -31,7 +31,13 @@ const PUBLIC_ROUTES = new Set([
   'POST /api/v1/auth/mfa/verify',
   'POST /api/v1/auth/refresh',
   'POST /api/v1/auth/invitations/accept',
+  'POST /api/v1/pos/devices/register',
 ]);
+
+const VALID_BODY: Record<string, unknown> = {
+  'PUT /api/v1/users/:id/roles': { roles: [] },
+  'PATCH /api/v1/users/:id': { status: 'SUSPENDED' },
+};
 
 type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 const routes = () =>
@@ -56,7 +62,26 @@ describe('access policy coverage (generated from every registered route)', () =>
     const [branch] = (await call(api, 'GET', '/api/v1/branches', { token: a.accessToken })).body;
     const [warehouse] = (await call(api, 'GET', '/api/v1/warehouses', { token: a.accessToken })).body;
     const [role] = (await call(api, 'GET', '/api/v1/roles', { token: a.accessToken })).body;
-    const member = await addMember(api, a, [{ roleCode: 'VIEWER' }]);
+    const member = await addMember(api, a, [{ roleCode: 'VIEWER' }]); // also notifies A's owner
+    const [notification] = (await call(api, 'GET', '/api/v1/notifications', { token: a.accessToken })).body;
+    const apiKey = (
+      await call(api, 'POST', '/api/v1/api-keys', {
+        token: a.accessToken,
+        body: { name: 'k', permissions: ['product.read'] },
+      })
+    ).body;
+    const device = (
+      await call(api, 'POST', '/api/v1/pos-devices', {
+        token: a.accessToken,
+        body: { code: 'POS01', name: 'x', branchId: branch.id, warehouseId: warehouse.id },
+      })
+    ).body;
+    const invitation = (
+      await call(api, 'POST', '/api/v1/users/invitations', {
+        token: a.accessToken,
+        body: { email: 'pending@example.com', roles: [{ roleId: role.id }] },
+      })
+    ).body;
     // Resource of tenant A for each route prefix; a new :id route must be added here.
     const idOfA: Record<string, string> = {
       '/api/v1/branches/:id': branch.id,
@@ -64,6 +89,11 @@ describe('access policy coverage (generated from every registered route)', () =>
       '/api/v1/roles/:id': role.id,
       '/api/v1/users/:id': member.membershipId,
       '/api/v1/users/:id/roles': member.membershipId,
+      '/api/v1/users/invitations/:id': invitation.invitationId,
+      '/api/v1/api-keys/:id': apiKey.id,
+      '/api/v1/pos-devices/:id': device.id,
+      '/api/v1/pos-devices/:id/registration-code': device.id,
+      '/api/v1/notifications/:id/read': notification.id,
     };
 
     const withId = routes().filter((r) => r.url.includes(':id'));
@@ -73,7 +103,8 @@ describe('access policy coverage (generated from every registered route)', () =>
       const url = r.url.replace(':id', idOfA[r.url]!);
       const res = await call(api, r.method, url, {
         token: b.accessToken, // tenant B's owner: every permission, wrong tenant
-        body: r.method === 'PUT' ? { roles: [] } : {},
+        // A valid body, so the only reason to fail is the foreign id.
+        body: VALID_BODY[r.key] ?? {},
         headers: { 'if-match': '"v1"' },
       });
       expect({ route: r.key, status: res.status }).toEqual({ route: r.key, status: 404 });

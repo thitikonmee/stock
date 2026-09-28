@@ -10,8 +10,12 @@ export interface MembershipAccess {
   userId: string;
   membershipStatus: string;
   tenantStatus: string;
+  userStatus: string;
   isOwner: boolean;
   grants: Grant[];
+  mfaEnabled: boolean;
+  /** Tenant grace period for mandatory 2FA has ended. */
+  mfaEnforced: boolean;
 }
 
 /** Everything needed to authorise one request, in one round trip. Caller's tx is tenant-scoped. */
@@ -21,15 +25,20 @@ export async function loadMembershipAccess(tx: Tx, membershipId: string): Promis
     status: string;
     is_owner: boolean;
     tenant_status: string;
+    user_status: string;
+    mfa_enabled: boolean;
+    mfa_enforced: boolean;
     permission_code: string | null;
     scope_type: ScopeType | null;
     scope_id: string | null;
     constraints: Record<string, unknown> | null;
   }>`
-    select m.user_id, m.status, m.is_owner, t.status as tenant_status,
+    select m.user_id, m.status, m.is_owner, t.status as tenant_status, u.status as user_status,
+           u.mfa_enabled, t.mfa_enforced_from <= now() as mfa_enforced,
            rp.permission_code, mr.scope_type, mr.scope_id, rp.constraints
       from tenant_memberships m
       join tenants t on t.id = m.tenant_id
+      join users u on u.id = m.user_id
       left join membership_roles mr on mr.tenant_id = m.tenant_id and mr.membership_id = m.id
       left join role_permissions rp on rp.tenant_id = mr.tenant_id and rp.role_id = mr.role_id
      where m.id = ${membershipId}`.execute(tx);
@@ -50,8 +59,11 @@ export async function loadMembershipAccess(tx: Tx, membershipId: string): Promis
     userId: first.user_id,
     membershipStatus: first.status,
     tenantStatus: first.tenant_status,
+    userStatus: first.user_status,
     isOwner: first.is_owner,
     grants,
+    mfaEnabled: first.mfa_enabled,
+    mfaEnforced: first.mfa_enforced,
   };
 }
 

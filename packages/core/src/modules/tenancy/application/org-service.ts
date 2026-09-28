@@ -2,6 +2,7 @@ import { sql } from 'kysely';
 import { PgErrorCode, pgErrorCode, type Tx } from '@stockos/database';
 import { ConflictError, NotFoundError, ValidationError, isUuid, uuidv7 } from '@stockos/shared';
 import { recordAudit } from '../../audit/public-api';
+import { PlanService } from '../../billing/public-api';
 import { assertCan, type Principal } from '../../iam/public-api';
 import { syncNegativeStockPolicy } from '../../inventory/public-api';
 
@@ -49,6 +50,8 @@ const CODE_RE = /^[A-Z0-9][A-Z0-9_-]{0,19}$/;
  * tenant); writes need branch.manage / warehouse.manage at tenant scope.
  */
 export class OrgService {
+  private readonly plans = new PlanService();
+
   async listBranches(tx: Tx): Promise<Branch[]> {
     const { rows } = await sql<BranchRow>`select ${branchCols} from branches order by code`.execute(tx);
     return rows.map(toBranch);
@@ -65,6 +68,7 @@ export class OrgService {
   async createBranch(tx: Tx, principal: Principal, input: BranchInput): Promise<Branch> {
     assertCan(principal, 'branch.manage');
     checkCode(input.code);
+    await this.plans.assertWithinLimit(tx, principal.tenantId, 'branches');
     const taxBranchNo = input.taxBranchNo ?? '00000';
     if (!/^\d{5}$/.test(taxBranchNo))
       throw new ValidationError('taxBranchNo must be 5 digits (00000 = head office)');

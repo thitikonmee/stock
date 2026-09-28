@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { iam } from '@stockos/core';
 import { tenantTx, type Db } from '@stockos/database';
 import { NotFoundError } from '@stockos/shared';
-import { CurrentPrincipal, RequirePermission } from '../auth/decorators';
+import { Authenticated, CurrentPrincipal, RequirePermission } from '../auth/decorators';
 import { parse, parseIfMatch } from '../common/validation';
 import { DB } from '../tokens';
 
@@ -81,5 +81,20 @@ export class RolesController {
     );
     void reply.header('etag', `"v${role.version}"`);
     return role;
+  }
+}
+
+/** The permission catalog (for the role editor). Not secret; any member may read it. */
+@Controller('permissions')
+export class PermissionsController {
+  @Authenticated()
+  @Get()
+  list() {
+    return iam.PERMISSION_CATALOG.map((p) => ({
+      code: p.code,
+      module: p.module,
+      description: p.description,
+      dangerous: p.dangerous,
+    }));
   }
 }

@@ -2,7 +2,7 @@ import { Body, Controller, HttpCode, Inject, Post } from '@nestjs/common';
 import { z } from 'zod';
 import { auth, type iam } from '@stockos/core';
 import { parse } from '../common/validation';
-import { Authenticated, CurrentPrincipal, Public } from './decorators';
+import { AllowWithoutMfa, Authenticated, CurrentPrincipal, Public, RateLimit } from './decorators';
 
 const SignupBody = z.strictObject({
   companyName: z.string().trim().min(2).max(120),
@@ -33,12 +33,14 @@ export class AuthController {
   ) {}
 
   @Public()
+  @RateLimit('signup')
   @Post('signup')
   signup(@Body() body: unknown) {
     return this.authService.signup(parse(SignupBody, body));
   }
 
   @Public()
+  @RateLimit('login')
   @Post('login')
   @HttpCode(200)
   login(@Body() body: unknown) {
@@ -51,6 +53,7 @@ export class AuthController {
   }
 
   @Public()
+  @RateLimit('mfa')
   @Post('mfa/verify')
   @HttpCode(200)
   verifyMfa(@Body() body: unknown) {
@@ -58,6 +61,7 @@ export class AuthController {
   }
 
   @Public()
+  @RateLimit('refresh')
   @Post('refresh')
   @HttpCode(200)
   refresh(@Body() body: unknown) {
@@ -65,6 +69,7 @@ export class AuthController {
   }
 
   @Public()
+  @RateLimit('invitation-accept')
   @Post('invitations/accept')
   @HttpCode(200)
   acceptInvitation(@Body() body: unknown) {
@@ -77,6 +82,7 @@ export class AuthController {
   }
 
   @Authenticated()
+  @AllowWithoutMfa()
   @Post('logout')
   @HttpCode(204)
   async logout(@CurrentPrincipal() principal: iam.Principal) {
@@ -84,6 +90,7 @@ export class AuthController {
   }
 
   @Authenticated()
+  @AllowWithoutMfa()
   @Post('mfa/setup')
   @HttpCode(200)
   setupMfa(@CurrentPrincipal() principal: iam.Principal) {
@@ -91,9 +98,19 @@ export class AuthController {
   }
 
   @Authenticated()
+  @AllowWithoutMfa()
   @Post('mfa/confirm')
   @HttpCode(204)
   async confirmMfa(@CurrentPrincipal() principal: iam.Principal, @Body() body: unknown) {
     await this.authService.confirmMfaEnrolment(principal, parse(CodeBody, body).code);
+  }
+
+  /** Re-prove 2FA to unlock dangerous actions (see STEP_UP_REQUIRED). */
+  @Authenticated()
+  @RateLimit('mfa')
+  @Post('step-up')
+  @HttpCode(200)
+  stepUp(@CurrentPrincipal() principal: iam.Principal, @Body() body: unknown) {
+    return this.authService.stepUp(principal, parse(CodeBody, body).code);
   }
 }

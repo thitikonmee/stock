@@ -53,6 +53,14 @@ export const EnvSchema = z.object({
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(30),
   REFRESH_TOKEN_ABSOLUTE_DAYS: z.coerce.number().int().positive().default(90),
   PASSWORD_ARGON2_MEMORY_KB: z.coerce.number().int().min(1024).default(65536),
+  /** Proxies whose X-Forwarded-For is trusted (proxy-addr syntax: names, IPs, CIDRs). */
+  TRUST_PROXY: z.string().default('loopback,uniquelocal'),
+  PUBLIC_WEB_BASE_URL: z.string().url().default('http://localhost:3100'),
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().int().positive().default(1025),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASSWORD: z.string().optional(),
+  EMAIL_FROM: z.string().default('StockOS <no-reply@stockos.local>'),
   /** 32 random bytes, base64. Local only — production uses KMS envelope encryption. */
   LOCAL_MASTER_KEY_BASE64: z
     .string()

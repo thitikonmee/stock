@@ -5,42 +5,39 @@
 
 ## Development
 
-**Prerequisites**: Node 22+ (`.nvmrc`), corepack (มากับ Node). ไม่ต้องมี Docker สำหรับรัน test — test สตาร์ต PostgreSQL 16 แบบ embedded ให้เอง
+**Prerequisites**: Node 22+ (`.nvmrc`) กับ corepack (มากับ Node) — ไม่ต้องมี Docker
 
 ```bash
 corepack enable            # ติดตั้ง pnpm ตามเวอร์ชันใน package.json
 pnpm install
-pnpm test                  # unit tests
-pnpm test:int              # integration (PostgreSQL จริง, RLS, engine, outbox)
-pnpm test:concurrency      # oversell / idempotency / deadlock tests
+pnpm dev:stack             # PostgreSQL 16 (embedded) + API :3000 + web :3100 — เปิด http://localhost:3100/signup
+```
+
+`dev:stack` สร้าง dev keys ใน `.secrets/`, ข้อมูลอยู่ใน `.pg-dev/` (ลบเพื่อเริ่มใหม่) และพิมพ์อีเมล (เช่น ลิงก์คำเชิญ) ลงใน log ของ API แทนการส่งจริง
+
+```bash
+pnpm test                  # unit
+pnpm test:int              # integration (PostgreSQL จริง)
+pnpm test:concurrency      # oversell / idempotency / deadlock
+pnpm test:e2e              # Playwright บน Chrome ที่ติดตั้งในเครื่อง (สตาร์ต stack ให้เอง)
 pnpm lint && pnpm typecheck && pnpm build
 ```
 
-รัน API บนเครื่อง (ต้องมี PostgreSQL — ใช้ `docker compose up -d postgres` หรือ Postgres ของตัวเอง):
-
-```bash
-cp .env.example .env
-pnpm gen:keys               # JWT signing key (.secrets/) + prints LOCAL_MASTER_KEY_BASE64 for .env
-pnpm db:migrate            # ใช้ DATABASE_URL_ADMIN
-pnpm db:local-roles        # ตั้งรหัสผ่าน role สำหรับ local เท่านั้น
-pnpm build && node apps/api/dist/main.js   # หรือ pnpm --filter @stockos/api dev
-curl localhost:3000/health/ready
-```
-
-ใช้ Postgres ภายนอกแทน embedded ใน test: `TEST_PG_SERVER_URL=postgres://user:pw@host:5432 pnpm test:int`
+Production-like: ใช้ `.env` (`cp .env.example .env`, `pnpm gen:keys`), `pnpm db:migrate`, SMTP จริง, `TRUST_PROXY` ตามเครือข่าย
 
 ### โครงสร้าง (Phase 0)
 
-| Path                                  | คืออะไร                                                                                    |
-| ------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `apps/api`                            | NestJS + Fastify: request id, request context, RFC 9457 errors, `/health`, `/health/ready` |
-| `apps/outbox-relay`                   | ส่ง event จาก `outbox_events` ไป BullMQ                                                    |
-| `packages/core/src/modules/inventory` | ★ `InventoryEngine` — ตัวเดียวที่เขียน `inventory_balances` + ledger                       |
-| `packages/database`                   | Kysely, `tenantTx` (RLS + retry), SQL migrator + migrations                                |
-| `packages/queue`                      | Transactional outbox, relay, `processOnce`, BullMQ publisher                               |
-| `packages/shared`                     | UUIDv7, Decimal quantity, domain errors, logger, request context                           |
-| `packages/config`                     | Env schema (zod) — บูตไม่ขึ้นถ้า config ผิด                                                |
-| `tests/`                              | integration + concurrency tests และ support (embedded Postgres, seeds, invariant checks)   |
+| Path                                  | คืออะไร                                                                                                                      |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `apps/api`                            | NestJS + Fastify: request id, request context, RFC 9457 errors, `/health`, `/health/ready`                                   |
+| `apps/web`                            | Next.js back-office (BFF: tokens อยู่ใน HttpOnly cookie) — login/2FA, onboarding, ผู้ใช้, บทบาท, สาขา, POS devices, API keys |
+| `apps/outbox-relay`                   | ส่ง event จาก `outbox_events` ไป BullMQ                                                                                      |
+| `packages/core/src/modules/inventory` | ★ `InventoryEngine` — ตัวเดียวที่เขียน `inventory_balances` + ledger                                                         |
+| `packages/database`                   | Kysely, `tenantTx` (RLS + retry), SQL migrator + migrations                                                                  |
+| `packages/queue`                      | Transactional outbox, relay, `processOnce`, BullMQ publisher                                                                 |
+| `packages/shared`                     | UUIDv7, Decimal quantity, domain errors, logger, request context                                                             |
+| `packages/config`                     | Env schema (zod) — บูตไม่ขึ้นถ้า config ผิด                                                                                  |
+| `tests/`                              | integration + concurrency tests และ support (embedded Postgres, seeds, invariant checks)                                     |
 
 ## เอกสาร
 

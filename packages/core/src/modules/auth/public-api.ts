@@ -7,7 +7,12 @@ export {
   type SignupInput,
 } from './application/auth-service';
 export type { TokenPair } from './application/sessions';
-export { UserService, type InvitationCreated, type Member } from './application/user-service';
+export {
+  UserService,
+  type InvitationCreated,
+  type Member,
+  type OpenInvitation,
+} from './application/user-service';
 export { JwtService, type JwtKeys, type JwtOptions } from './infrastructure/jwt';
 export {
   PasswordHasher,
@@ -16,3 +21,10 @@ export {
 } from './infrastructure/password';
 export { SecretBox } from './infrastructure/secret-box';
 export { base32Decode, currentStep, totpAt } from './infrastructure/totp';
+export {
+  ApiKeyService,
+  API_KEY_PREFIX,
+  type ApiKey,
+  type CreateApiKeyInput,
+} from './application/api-key-service';
+export { assertUsableMembership } from './application/auth-service';

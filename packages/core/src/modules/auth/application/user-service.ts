@@ -2,13 +2,19 @@ import { sql } from 'kysely';
 import { PgErrorCode, pgErrorCode, tenantTx, type Db, type Tx } from '@stockos/database';
 import {
   ConflictError,
+  ForbiddenError,
   NotFoundError,
   UnauthenticatedError,
   ValidationError,
+  hashEquals,
   isUuid,
+  newOpaqueToken,
+  sha256,
   uuidv7,
 } from '@stockos/shared';
 import { recordAudit } from '../../audit/public-api';
+import { PlanService } from '../../billing/public-api';
+import { NotificationService } from '../../notifications/public-api';
 import {
   assertCan,
   listAssignments,
@@ -17,7 +23,6 @@ import {
   type RoleAssignment,
   type RoleService,
 } from '../../iam/public-api';
-import { hashEquals, newOpaqueToken, sha256 } from '../infrastructure/opaque-token';
 import type { PasswordHasher } from '../infrastructure/password';
 import { normalizeEmail, type AuthService } from './auth-service';
 import type { TokenPair } from './sessions';
@@ -35,15 +40,31 @@ export interface Member {
 
 export interface InvitationCreated {
   invitationId: string;
+  email: string;
   /** Deliver to the invitee (e-mail in production). Shown once; only its hash is stored. */
   token: string;
   expiresAt: Date;
+  /** For the invitation e-mail. */
+  companyName: string;
+  inviterName: string;
+}
+
+export interface OpenInvitation {
+  id: string;
+  email: string;
+  roles: RoleAssignment[];
+  invitedBy: string | null;
+  expiresAt: Date;
+  createdAt: Date;
 }
 
 const INVITATION_TTL_MS = 72 * 3600 * 1000;
 
 /** Members of a tenant and the invitation flow. */
 export class UserService {
+  private readonly plans = new PlanService();
+  private readonly notifications = new NotificationService();
+
   constructor(
     private readonly db: Db,
     private readonly roles: RoleService,
@@ -97,6 +118,7 @@ export class UserService {
     const email = normalizeEmail(input.email);
     if (input.roles.length === 0) throw new ValidationError('Give the new member at least one role');
     await this.roles.validateAssignments(tx, principal, input.roles);
+    await this.plans.assertWithinLimit(tx, principal.tenantId, 'users');
 
     const { rows: existing } = await sql`
       select 1 from tenant_memberships m join users u on u.id = m.user_id
@@ -122,7 +144,96 @@ export class UserService {
       resourceId: id,
       after: { email, roles: input.roles },
     });
-    return { invitationId: id, token: `${principal.tenantId}.${id}.${secret}`, expiresAt };
+    const { rows: names } = await sql<{ company: string; inviter: string }>`
+      select t.name as company, u.display_name as inviter
+        from tenants t cross join users u
+       where t.id = ${principal.tenantId} and u.id = ${principal.userId}`.execute(tx);
+    return {
+      invitationId: id,
+      email,
+      token: `${principal.tenantId}.${id}.${secret}`,
+      expiresAt,
+      companyName: names[0]?.company ?? '',
+      inviterName: names[0]?.inviter ?? '',
+    };
+  }
+
+  async listInvitations(tx: Tx, principal: Principal): Promise<OpenInvitation[]> {
+    assertCan(principal, 'user.read');
+    const { rows } = await sql<{
+      id: string;
+      email: string;
+      role_assignments: RoleAssignment[];
+      invited_by: string | null;
+      expires_at: Date;
+      created_at: Date;
+    }>`select i.id, i.email::text as email, i.role_assignments, u.display_name as invited_by, i.expires_at, i.created_at
+         from invitations i
+         left join tenant_memberships m on m.id = i.invited_by
+         left join users u on u.id = m.user_id
+        where i.accepted_at is null and i.revoked_at is null
+        order by i.created_at desc`.execute(tx);
+    return rows.map((r) => ({
+      id: r.id,
+      email: r.email,
+      roles: r.role_assignments,
+      invitedBy: r.invited_by,
+      expiresAt: r.expires_at,
+      createdAt: r.created_at,
+    }));
+  }
+
+  async revokeInvitation(tx: Tx, principal: Principal, id: string): Promise<void> {
+    assertCan(principal, 'user.manage');
+    if (!isUuid(id)) throw new NotFoundError('Invitation not found');
+    const { rows } = await sql`update invitations set revoked_at = now()
+                                where id = ${id} and accepted_at is null and revoked_at is null returning id`.execute(
+      tx,
+    );
+    if (rows.length === 0) throw new NotFoundError('Invitation not found');
+    await recordAudit(tx, {
+      tenantId: principal.tenantId,
+      action: 'user.invitation.revoke',
+      resourceType: 'invitation',
+      resourceId: id,
+    });
+  }
+
+  /**
+   * Suspend or reactivate a member. Suspension revokes their sessions at once; their API keys stop
+   * working too (keys act on behalf of their creator).
+   */
+  async setMemberStatus(tx: Tx, principal: Principal, membershipId: string, status: 'ACTIVE' | 'SUSPENDED') {
+    assertCan(principal, 'user.manage');
+    if (!isUuid(membershipId)) throw new NotFoundError('Member not found');
+    if (membershipId === principal.membershipId) {
+      throw new ForbiddenError('You cannot change your own status', {}, 'PRIVILEGE_ESCALATION');
+    }
+    const { rows } = await sql<{ is_owner: boolean; status: string }>`
+      select is_owner, status from tenant_memberships where id = ${membershipId} and status in ('ACTIVE', 'SUSPENDED')`.execute(
+      tx,
+    );
+    const member = rows[0];
+    if (!member) throw new NotFoundError('Member not found');
+    if (member.is_owner)
+      throw new ForbiddenError('The owner cannot be suspended', {}, 'PRIVILEGE_ESCALATION');
+    await sql`update tenant_memberships set status = ${status}, updated_at = now() where id = ${membershipId}`.execute(
+      tx,
+    );
+    if (status === 'SUSPENDED') {
+      await sql`update user_sessions set revoked_at = now() where membership_id = ${membershipId} and revoked_at is null`.execute(
+        tx,
+      );
+    }
+    await recordAudit(tx, {
+      tenantId: principal.tenantId,
+      action: status === 'SUSPENDED' ? 'membership.suspend' : 'membership.reactivate',
+      resourceType: 'membership',
+      resourceId: membershipId,
+      before: { status: member.status },
+      after: { status },
+    });
+    return this.getMember(tx, principal, membershipId);
   }
 
   /**
@@ -145,7 +256,9 @@ export class UserService {
         expires_at: Date;
         accepted_at: Date | null;
         revoked_at: Date | null;
-      }>`select email::text as email, role_assignments, token_hash, expires_at, accepted_at, revoked_at
+        inviter_user_id: string | null;
+      }>`select email::text as email, role_assignments, token_hash, expires_at, accepted_at, revoked_at,
+                (select m.user_id from tenant_memberships m where m.id = invitations.invited_by) as inviter_user_id
            from invitations where id = ${invitationId} for update`.execute(tx);
       const inv = rows[0];
       if (
@@ -180,6 +293,16 @@ export class UserService {
         actor: { type: 'USER', id: userId },
         after: { email: inv.email, roles: inv.role_assignments },
       });
+      if (inv.inviter_user_id) {
+        await this.notifications.notify(tx, {
+          tenantId,
+          userIds: [inv.inviter_user_id],
+          eventType: 'MEMBER_JOINED',
+          severity: 'INFO',
+          title: `${inv.email} accepted your invitation`,
+          data: { membershipId },
+        });
+      }
       return this.auth.startSession(userId, tenantId, membershipId, ['pwd'], tx);
     });
   }

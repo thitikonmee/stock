@@ -1,8 +1,7 @@
 import { sql } from 'kysely';
 import type { Tx } from '@stockos/database';
-import { uuidv7 } from '@stockos/shared';
+import { newOpaqueToken, sha256, uuidv7 } from '@stockos/shared';
 import type { JwtService } from '../infrastructure/jwt';
-import { newOpaqueToken, sha256 } from '../infrastructure/opaque-token';
 
 export interface TokenPair {
   tokenType: 'Bearer';

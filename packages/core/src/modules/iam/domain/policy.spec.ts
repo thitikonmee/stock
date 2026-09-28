@@ -5,14 +5,18 @@ import { assertCan, can, tenantWidePermissions, type Grant, type Principal } fro
 import { SYSTEM_ROLES, SYSTEM_ROLE_CODES } from './system-roles';
 
 const principal = (grants: Grant[]): Principal => ({
+  kind: 'USER',
   userId: 'u',
   tenantId: 't',
   membershipId: 'm',
   sessionId: 's',
+  apiKeyId: null,
   isOwner: false,
   grants,
   amr: ['pwd'],
   authTime: 0,
+  mfaEnabled: false,
+  mfaEnforced: false,
 });
 const grant = (
   permission: Grant['permission'],

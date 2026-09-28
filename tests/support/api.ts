@@ -2,21 +2,31 @@ import 'reflect-metadata';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { expect } from 'vitest';
 import { createApp } from '@stockos/api/app';
-import type { auth } from '@stockos/core';
+import { DEFAULT_RATE_LIMITS, type RateLimits } from '@stockos/api/auth/rate-limit.guard';
+import type { auth, notifications } from '@stockos/core';
 import { createLogger, uuidv7 } from '@stockos/shared';
 import { testAuthConfig } from './auth-config';
 import type { TestDatabase } from './test-db';
 
 export type Api = NestFastifyApplication;
 
+/** Tests share one client IP, so rate limits are effectively off unless a test sets them. */
+const NO_RATE_LIMITS: RateLimits = Object.fromEntries(
+  Object.keys(DEFAULT_RATE_LIMITS).map((k) => [k, { limit: 1_000_000, windowSec: 60 }]),
+) as RateLimits;
+
 export async function createTestApi(
   db: TestDatabase,
   authOverrides: Partial<auth.AuthConfig> = {},
+  appOverrides: { rateLimits?: Partial<RateLimits>; mailer?: notifications.EmailSender } = {},
 ): Promise<Api> {
   return createApp({
     db: db.app,
     logger: createLogger('test', 'error'),
     auth: testAuthConfig(authOverrides),
+    rateLimits: { ...NO_RATE_LIMITS, ...appOverrides.rateLimits },
+    ...(appOverrides.mailer ? { mailer: appOverrides.mailer } : {}),
+    webBaseUrl: 'https://app.stockos.test',
   });
 }
 

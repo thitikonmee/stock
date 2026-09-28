@@ -93,3 +93,12 @@ async adjust(@Body() dto: AdjustDto, @Ctx() ctx: RequestContext) { ... }
 - **Login before tenant context**: `auth_user_memberships()` is a narrow `SECURITY DEFINER` function owned by `stockos_platform`; invitation tokens embed the tenant id so acceptance runs under that tenant's RLS
 - **Fail-closed routes**: the global `AuthGuard` rejects any route without `@Public` / `@Authenticated` / `@RequirePermission`; `tests/integration/api-access.test.ts` walks every registered route (401 without token, 404 cross-tenant)
 - **TOTP**: RFC 6238, ±1 step, replay-protected by `users.mfa_last_step`; seed sealed with AES-256-GCM bound to the user id
+
+### Phase 1 completion (2026-09-28)
+- **Rate limiting**: per-IP fixed windows in Postgres (`rate_limit_buckets`, UNLOGGED) on signup / login / MFA / refresh / invitation accept / device registration → 429 + `Retry-After`. Complements per-account lockout (which cannot stop one IP trying many accounts). High-volume per-key API limits → Redis later.
+- **Mandatory 2FA**: members holding any dangerous permission must enrol once `tenants.mfa_enforced_from` passes (7-day grace from signup); until then only `/me`, `/auth/mfa/*`, `/auth/logout` work (`MFA_ENROLLMENT_REQUIRED`). Members with 2FA need an `otp` proof ≤ 15 min old for dangerous permissions (`STEP_UP_REQUIRED` → `POST /auth/step-up`).
+- **API keys** (`sk_live_<prefix>_<secret>`): act on behalf of the creating member; effective permissions = key ∩ creator's current grants; never dangerous permissions; optional IP allowlist; revoking the key or suspending the creator stops it immediately.
+- **POS devices**: one-time 10-char code (15 min, rate limited, hash only) + shop slug → device token `pd_<tenant>.<device>.<secret>`; `Authorization: Device …`; disable / lost / re-issue revoke it immediately.
+- **Web BFF** (ADR-014): tokens only in HttpOnly/SameSite=Strict cookies; `document.cookie` is empty (checked by E2E); CSRF header + Origin check; security headers (X-Frame-Options DENY, nosniff, Referrer-Policy).
+- **Client IP** (ADR-015): X-Forwarded-For trusted only from private/loopback hops, so rate limits cannot be bypassed by forging the header (integration test).
+- **Invitation e-mail** is sent after the transaction commits; failure never loses the invitation (link returned to the inviter). HTML e-mail escapes all interpolated values.

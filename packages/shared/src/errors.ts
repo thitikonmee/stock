@@ -56,7 +56,23 @@ export class UnauthenticatedError extends DomainError {
   }
 }
 
-export type ForbiddenCode = 'FORBIDDEN' | 'PRIVILEGE_ESCALATION' | 'STEP_UP_REQUIRED' | 'TENANT_INACTIVE';
+export type ForbiddenCode =
+  | 'FORBIDDEN'
+  | 'PRIVILEGE_ESCALATION'
+  | 'STEP_UP_REQUIRED'
+  | 'MFA_ENROLLMENT_REQUIRED'
+  | 'TENANT_INACTIVE'
+  | 'PLAN_LIMIT_EXCEEDED';
+
+/** 429 — too many attempts; `retryAfterSec` becomes the Retry-After header. */
+export class RateLimitedError extends DomainError {
+  readonly code = 'RATE_LIMITED';
+  readonly httpStatus = 429;
+
+  constructor(readonly retryAfterSec: number) {
+    super('Too many requests, try again later', { retryAfterSec });
+  }
+}
 
 /** 403 — authenticated, but not allowed. */
 export class ForbiddenError extends DomainError {

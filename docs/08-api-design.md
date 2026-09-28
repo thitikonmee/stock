@@ -171,5 +171,16 @@ POST   /webhooks/payments/{provider}
 /admin/* (platform admin — separate auth realm, ดู 13)
 ```
 
+### Phase 1 endpoints (implemented)
+```
+POST /auth/step-up                     {code} → new token pair with fresh 2FA proof
+GET|POST /api-keys   DELETE /api-keys/:id
+GET|POST /pos-devices   GET|PATCH /pos-devices/:id   POST /pos-devices/:id/registration-code
+POST /pos/devices/register            (public, rate limited)   POST /pos/heartbeat (Device auth)
+GET /notifications?unread=true   POST /notifications/:id/read   POST /notifications/read-all
+GET /billing/usage
+```
+Error codes added: `RATE_LIMITED` (429 + Retry-After), `MFA_ENROLLMENT_REQUIRED`, `STEP_UP_REQUIRED`, `PLAN_LIMIT_EXCEEDED` (403, meta.metric/limit/used)
+
 ### Outbound webhooks (ให้ลูกค้า subscribe) — Phase 3
 Events: `order.created`, `order.updated`, `inventory.changed`, `product.updated` ; signed `X-StockOS-Signature: t=<ts>,v1=<hmac-sha256>` ; retry exp 24 ชม. ; delivery log

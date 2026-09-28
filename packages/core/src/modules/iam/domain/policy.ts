@@ -11,18 +11,30 @@ export interface Grant {
   constraints: Readonly<Record<string, unknown>>;
 }
 
-/** The authenticated caller, resolved per request from the access token and the database. */
+/**
+ * The authenticated caller, resolved per request from the credential and the database.
+ * An API key acts on behalf of the member who created it (`userId`/`membershipId`), with
+ * `grants` narrowed to the key's permissions — revoking or suspending the creator stops the key.
+ */
 export interface Principal {
+  kind: 'USER' | 'API_KEY';
   userId: string;
   tenantId: string;
   membershipId: string;
-  sessionId: string;
+  /** Login session (null for API keys). */
+  sessionId: string | null;
+  apiKeyId: string | null;
+  /** API keys only: requests allowed per minute. */
+  rateLimitPerMin?: number;
   isOwner: boolean;
   grants: readonly Grant[];
   /** Authentication methods of the session, e.g. ['pwd'] or ['pwd', 'otp']. */
   amr: readonly string[];
   /** Unix seconds of the last primary/2FA authentication. */
   authTime: number;
+  mfaEnabled: boolean;
+  /** The tenant's grace period for mandatory 2FA is over. */
+  mfaEnforced: boolean;
 }
 
 /** Where a resource lives. A branch grant covers the branch's warehouses when branchId is passed too. */
