@@ -1,4 +1,7 @@
 import 'reflect-metadata';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { expect } from 'vitest';
 import { createApp } from '@stockos/api/app';
@@ -27,6 +30,8 @@ export async function createTestApi(
     rateLimits: { ...NO_RATE_LIMITS, ...appOverrides.rateLimits },
     ...(appOverrides.mailer ? { mailer: appOverrides.mailer } : {}),
     webBaseUrl: 'https://app.stockos.test',
+    // Product images: a throwaway temp dir per test file, never the repo's own .uploads/.
+    storage: { localDir: mkdtempSync(join(tmpdir(), 'stockos-uploads-')) },
   });
 }
 
@@ -51,6 +56,31 @@ export async function call(
     ...(options.body !== undefined ? { payload: options.body as Record<string, unknown> } : {}),
   });
   return { status: res.statusCode, body: res.body ? res.json() : undefined, headers: res.headers };
+}
+
+export interface BinaryCall {
+  status: number;
+  body: Buffer;
+  headers: Record<string, unknown>;
+}
+
+/**
+ * Like `call`, but for binary responses (PDF, xlsx, images) — never runs `res.json()` on the way
+ * out. `body` may be a JSON-able object (auto-encoded, like `call`) or a raw `Buffer` (sent as-is).
+ */
+export async function callBinary(
+  api: Api,
+  method: 'GET' | 'POST',
+  url: string,
+  options: { token?: string; body?: unknown; headers?: Record<string, string> } = {},
+): Promise<BinaryCall> {
+  const res = await api.inject({
+    method,
+    url,
+    headers: { ...(options.token ? bearer(options.token) : {}), ...options.headers },
+    ...(options.body !== undefined ? { payload: options.body as Record<string, unknown> } : {}),
+  });
+  return { status: res.statusCode, body: res.rawPayload, headers: res.headers };
 }
 
 export interface SignedUpTenant {

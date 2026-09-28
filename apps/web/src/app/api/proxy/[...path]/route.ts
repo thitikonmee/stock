@@ -25,7 +25,9 @@ async function handle(req: Request, ctx: Ctx): Promise<NextResponse> {
   if (path.some((segment) => segment === '..' || segment === '.'))
     return problem(400, 'BAD_PATH', 'Invalid path');
   const target = `${apiBase()}/${path.map(encodeURIComponent).join('/')}${new URL(req.url).search}`;
-  const body = ['GET', 'HEAD'].includes(req.method) ? undefined : await req.text();
+  // ArrayBuffer, not .text(): a binary upload (e.g. the catalog's xlsx import) must round-trip
+  // byte-for-byte — decoding through a string would corrupt it. JSON bodies pass through unchanged.
+  const body = ['GET', 'HEAD'].includes(req.method) ? undefined : await req.arrayBuffer();
 
   const jar = await cookies();
   let access = jar.get(COOKIES.access)?.value;
@@ -40,7 +42,7 @@ async function handle(req: Request, ctx: Ctx): Promise<NextResponse> {
     fetch(target, {
       method: req.method,
       headers: forwardedHeaders(req, token ? { authorization: `Bearer ${token}` } : {}),
-      ...(body !== undefined && body !== '' ? { body } : {}),
+      ...(body !== undefined && body.byteLength > 0 ? { body } : {}),
       cache: 'no-store',
     });
 

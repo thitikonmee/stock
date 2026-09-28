@@ -16,6 +16,9 @@ const MESSAGES: Record<string, string> = {
   TENANT_SELECTION_REQUIRED: 'บัญชีนี้อยู่หลายบริษัท กรุณาเลือกบริษัท',
   UNAUTHENTICATED: 'ลิงก์หรือรหัสไม่ถูกต้อง หรือหมดอายุแล้ว',
   CSRF_REJECTED: 'คำขอถูกบล็อกเพื่อความปลอดภัย กรุณาโหลดหน้าใหม่',
+  PRODUCT_HAS_STOCK: 'ลบไม่ได้เพราะยังมีสต็อกคงเหลือ ให้ปรับสต็อกเป็น 0 ก่อน',
+  NOT_A_BUNDLE: 'สินค้านี้ไม่ใช่ประเภทชุด (Bundle)',
+  NOT_FOUND: 'ไม่พบข้อมูล',
 };
 
 export function messageFor(error: unknown): string {

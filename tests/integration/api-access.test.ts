@@ -37,6 +37,15 @@ const PUBLIC_ROUTES = new Set([
 const VALID_BODY: Record<string, unknown> = {
   'PUT /api/v1/users/:id/roles': { roles: [] },
   'PATCH /api/v1/users/:id': { status: 'SUSPENDED' },
+  'POST /api/v1/products/:id/variants': { sku: 'X1' },
+  'POST /api/v1/products/:id/images': { contentType: 'image/png', dataBase64: 'AAAA' },
+  'POST /api/v1/products/:id/units': { unitId: '00000000-0000-7000-8000-000000000000', factorToBase: '12' },
+  'POST /api/v1/variants/:id/barcodes': { barcode: '1234567890128', symbology: 'EAN13' },
+  'POST /api/v1/variants/:id/bundle-components': {
+    components: [{ variantId: '00000000-0000-7000-8000-000000000000', quantity: '1' }],
+  },
+  'POST /api/v1/suppliers/:id/products': { variantId: '00000000-0000-7000-8000-000000000000' },
+  'PUT /api/v1/price-lists/:id/prices': { variantId: '00000000-0000-7000-8000-000000000000', price: '10.00' },
 };
 
 type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -82,6 +91,49 @@ describe('access policy coverage (generated from every registered route)', () =>
         body: { email: 'pending@example.com', roles: [{ roleId: role.id }] },
       })
     ).body;
+    const brand = (
+      await call(api, 'POST', '/api/v1/brands', { token: a.accessToken, body: { name: 'BrandA' } })
+    ).body;
+    const category = (
+      await call(api, 'POST', '/api/v1/categories', { token: a.accessToken, body: { name: 'CatA' } })
+    ).body;
+    const unit = (
+      await call(api, 'POST', '/api/v1/units', { token: a.accessToken, body: { code: 'PCS', name: 'Piece' } })
+    ).body;
+    const product = (
+      await call(api, 'POST', '/api/v1/products', {
+        token: a.accessToken,
+        body: { code: 'PROD-A', name: 'Product A', baseUnitId: unit.id, variants: [{ sku: 'SKU-A1' }] },
+      })
+    ).body;
+    const variant = product.variants[0];
+    await call(api, 'POST', `/api/v1/variants/${variant.id}/barcodes`, {
+      token: a.accessToken,
+      body: { barcode: '1234567890128', symbology: 'EAN13' },
+    });
+    const image = (
+      await call(api, 'POST', `/api/v1/products/${product.id}/images`, {
+        token: a.accessToken,
+        body: { contentType: 'image/png', dataBase64: 'AAAA' },
+      })
+    ).body;
+    const [priceList] = (await call(api, 'GET', '/api/v1/price-lists', { token: a.accessToken })).body; // RETAIL, seeded at signup
+    const supplier = (
+      await call(api, 'POST', '/api/v1/suppliers', {
+        token: a.accessToken,
+        body: { code: 'SUP1', name: 'Supplier A' },
+      })
+    ).body;
+    await call(api, 'POST', `/api/v1/suppliers/${supplier.id}/products`, {
+      token: a.accessToken,
+      body: { variantId: variant.id },
+    });
+    const job = await platformTx(db.platform, (tx) =>
+      sql<{ id: string }>`insert into import_jobs (tenant_id, id, type, status, total_rows)
+                           values (${a.tenantId}, ${'00000000-0000-7000-8000-0000000000aa'}, 'PRODUCT_IMPORT', 'COMPLETED', 0)
+                           returning id`.execute(tx),
+    ).then((r) => r.rows[0]!);
+
     // Resource of tenant A for each route prefix; a new :id route must be added here.
     const idOfA: Record<string, string> = {
       '/api/v1/branches/:id': branch.id,
@@ -94,6 +146,20 @@ describe('access policy coverage (generated from every registered route)', () =>
       '/api/v1/pos-devices/:id': device.id,
       '/api/v1/pos-devices/:id/registration-code': device.id,
       '/api/v1/notifications/:id/read': notification.id,
+      '/api/v1/brands/:id': brand.id,
+      '/api/v1/categories/:id': category.id,
+      '/api/v1/products/:id': product.id,
+      '/api/v1/products/:id/variants': product.id,
+      '/api/v1/products/:id/images': product.id,
+      '/api/v1/products/:id/units': product.id,
+      '/api/v1/variants/:id': variant.id,
+      '/api/v1/variants/:id/barcodes': variant.id,
+      '/api/v1/variants/:id/bundle-components': variant.id,
+      '/api/v1/images/:id': image.id,
+      '/api/v1/jobs/:id': job.id,
+      '/api/v1/suppliers/:id': supplier.id,
+      '/api/v1/suppliers/:id/products': supplier.id,
+      '/api/v1/price-lists/:id/prices': priceList.id,
     };
 
     const withId = routes().filter((r) => r.url.includes(':id'));

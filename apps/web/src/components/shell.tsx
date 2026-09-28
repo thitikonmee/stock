@@ -17,6 +17,9 @@ export const useMe = () => useContext(MeContext);
 
 const NAV: { href: string; label: string; permission?: string }[] = [
   { href: '/', label: 'หน้าหลัก' },
+  { href: '/catalog/products', label: 'สินค้า', permission: 'product.read' },
+  { href: '/catalog/categories', label: 'หมวดหมู่/แบรนด์/หน่วย', permission: 'product.read' },
+  { href: '/catalog/suppliers', label: 'ผู้จัดจำหน่าย', permission: 'supplier.read' },
   { href: '/settings/branches', label: 'สาขาและคลัง' },
   { href: '/settings/devices', label: 'เครื่อง POS', permission: 'device.manage' },
   { href: '/settings/users', label: 'ผู้ใช้งาน', permission: 'user.read' },

@@ -126,3 +126,125 @@ export interface PlanSummary {
 
 export const can = (me: Me | undefined, permission: string) =>
   !!me?.grants.some((g) => g.permission === permission);
+
+// --- Catalog (Phase 2) -----------------------------------------------------------
+
+export interface Brand {
+  id: string;
+  name: string;
+  isActive: boolean;
+}
+
+export interface Category {
+  id: string;
+  parentId: string | null;
+  name: string;
+  path: string;
+  sortOrder: number;
+}
+
+export interface Unit {
+  id: string;
+  code: string;
+  name: string;
+  allowDecimal: boolean;
+}
+
+export type ProductType = 'STANDARD' | 'BUNDLE' | 'SERVICE' | 'NON_STOCK';
+export type ProductStatus = 'DRAFT' | 'ACTIVE' | 'ARCHIVED';
+export type VariantStatus = 'ACTIVE' | 'INACTIVE' | 'ARCHIVED';
+
+export interface Variant {
+  id: string;
+  productId: string;
+  sku: string;
+  name: string;
+  optionValues: Record<string, string>;
+  costPrice: string;
+  sellingPrice: string;
+  weightGrams: number | null;
+  reorderPoint: string | null;
+  reorderQty: string | null;
+  lowStockThreshold: string | null;
+  status: VariantStatus;
+  version: number;
+  barcodes: string[];
+}
+
+export interface Product {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  brandId: string | null;
+  categoryId: string | null;
+  baseUnitId: string;
+  type: ProductType;
+  options: { name: string; values: string[] }[];
+  taxClass: 'VAT7' | 'VAT0' | 'EXEMPT';
+  trackInventory: boolean;
+  status: ProductStatus;
+  version: number;
+  variants: Variant[];
+}
+
+export interface ProductPage {
+  data: Product[];
+  page: { nextCursor: string | null };
+}
+
+export interface ProductImage {
+  id: string;
+  productId: string;
+  variantId: string | null;
+  sortOrder: number;
+  contentType: string;
+  sizeBytes: number;
+  altText: string | null;
+}
+
+export interface Supplier {
+  id: string;
+  code: string;
+  name: string;
+  taxId: string | null;
+  paymentTermsDays: number;
+  defaultLeadTimeDays: number;
+  currency: string;
+  isActive: boolean;
+}
+
+export interface SupplierProduct {
+  supplierId: string;
+  variantId: string;
+  supplierSku: string | null;
+  lastCost: string | null;
+  minOrderQty: string | null;
+  leadTimeDays: number | null;
+  isPreferred: boolean;
+}
+
+export interface ImportJob {
+  id: string;
+  status: 'PROCESSING' | 'COMPLETED' | 'FAILED';
+  totalRows: number;
+  createdProducts: number;
+  createdVariants: number;
+  updatedVariants: number;
+  errors: { row: number; message: string }[];
+}
+
+export interface BundleComponent {
+  variantId: string;
+  sku: string;
+  name: string;
+  quantity: string;
+}
+
+export interface UnitConversion {
+  unitId: string;
+  unitCode: string;
+  factorToBase: string;
+  isPurchaseUnit: boolean;
+  isSalesUnit: boolean;
+}

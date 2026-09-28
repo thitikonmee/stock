@@ -12,6 +12,7 @@ import {
 } from '@stockos/shared';
 import { recordAudit } from '../../audit/public-api';
 import { PlanService } from '../../billing/public-api';
+import { PriceService } from '../../catalog/public-api';
 import {
   createSystemRoles,
   loadMembershipAccess,
@@ -120,6 +121,7 @@ export class AuthService {
         );
         await sql`insert into warehouses (tenant_id, id, branch_id, code, name, type)
                   values (${tenantId}, ${uuidv7()}, ${branchId}, 'MAIN', 'คลังหลัก', 'CENTRAL')`.execute(tx);
+        await new PriceService().ensureDefaultList(tx, tenantId);
 
         await recordAudit(tx, {
           tenantId,
