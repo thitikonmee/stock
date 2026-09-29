@@ -384,3 +384,96 @@ export interface Customer {
   totalSpent: string;
   orderCount: number;
 }
+
+export type OrderStatus =
+  | 'DRAFT'
+  | 'PENDING'
+  | 'PAID'
+  | 'CONFIRMED'
+  | 'PROCESSING'
+  | 'PACKED'
+  | 'SHIPPED'
+  | 'DELIVERED'
+  | 'COMPLETED'
+  | 'CANCELLED'
+  | 'RETURNED'
+  | 'REFUNDED'
+  | 'PARTIALLY_REFUNDED'
+  | 'ON_HOLD';
+
+export interface OrderLine {
+  id: string;
+  lineNo: number;
+  variantId: string;
+  sku: string;
+  name: string;
+  quantity: string;
+  unitPrice: string;
+  taxRate: string;
+  discountAmount: string;
+  taxAmount: string;
+  lineTotal: string;
+  fulfilledQty: string;
+  cancelledQty: string;
+  returnedQty: string;
+  refundedAmount: string;
+}
+
+export interface Order {
+  id: string;
+  orderNo: string;
+  channelCode: string;
+  warehouseId: string;
+  customerId: string | null;
+  status: OrderStatus;
+  paymentStatus: string;
+  fulfillmentStatus: string;
+  inventoryStatus: string;
+  holdReason: string | null;
+  subtotal: string;
+  discountTotal: string;
+  taxTotal: string;
+  grandTotal: string;
+  paidTotal: string;
+  refundedTotal: string;
+  note: string | null;
+  placedAt: string;
+  lines: OrderLine[];
+}
+export interface OrderListPage {
+  data: Order[];
+  page: { nextCursor: string | null };
+}
+
+export type FulfillmentRowStatus =
+  'PENDING' | 'PICKING' | 'PACKED' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED' | 'RETURNED';
+export interface OrderFulfillment {
+  id: string;
+  orderId: string;
+  warehouseId: string;
+  status: FulfillmentRowStatus;
+  carrier: string | null;
+  trackingNo: string | null;
+  shippedAt: string | null;
+  items: { orderItemId: string; quantity: string }[];
+}
+
+export type ReturnCondition = 'SELLABLE' | 'DAMAGED' | 'MISSING';
+export type ReturnStatus =
+  'REQUESTED' | 'APPROVED' | 'REJECTED' | 'IN_TRANSIT' | 'RECEIVED' | 'INSPECTED' | 'COMPLETED' | 'CANCELLED';
+export interface OrderReturn {
+  id: string;
+  orderId: string;
+  status: ReturnStatus;
+  reason: string | null;
+  receiveWarehouseId: string | null;
+  items: { orderItemId: string; quantity: string; condition: ReturnCondition | null; restockedQty: string }[];
+}
+
+export interface OrderRefund {
+  id: string;
+  docNo: string;
+  orderId: string;
+  amount: string;
+  status: string;
+}

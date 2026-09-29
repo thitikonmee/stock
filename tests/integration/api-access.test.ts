@@ -54,6 +54,20 @@ const VALID_BODY: Record<string, unknown> = {
     lines: [{ orderItemId: '00000000-0000-7000-8000-000000000000', quantity: '1' }],
     reason: 'test',
   },
+  'POST /api/v1/orders/:id/hold': { reason: 'test' },
+  'POST /api/v1/orders/:id/returns': {
+    lines: [{ orderItemId: '00000000-0000-7000-8000-000000000000', quantity: '1' }],
+  },
+  'POST /api/v1/orders/:id/refunds': {
+    lines: [{ orderItemId: '00000000-0000-7000-8000-000000000000', quantity: '1' }],
+    reason: 'test',
+  },
+  'POST /api/v1/orders/:id/fulfillments': {
+    lines: [{ orderItemId: '00000000-0000-7000-8000-000000000000', quantity: '1' }],
+  },
+  'POST /api/v1/returns/:id/receive': {
+    lines: [{ orderItemId: '00000000-0000-7000-8000-000000000000', condition: 'SELLABLE' }],
+  },
 };
 
 type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -200,6 +214,42 @@ describe('access policy coverage (generated from every registered route)', () =>
       })
     ).body;
 
+    const orderRes = await call(api, 'POST', '/api/v1/orders', {
+      token: a.accessToken,
+      headers: { 'idempotency-key': '00000000-0000-7000-8000-0000000000dd' },
+      body: {
+        channelCode: 'API',
+        warehouseId: warehouse.id,
+        paid: true,
+        lines: [{ variantId: variant.id, quantity: '1' }],
+      },
+    });
+    expect(orderRes.status, JSON.stringify(orderRes.body)).toBe(201);
+    const order = orderRes.body;
+    const confirmRes = await call(api, 'POST', `/api/v1/orders/${order.id}/confirm`, {
+      token: a.accessToken,
+    });
+    expect(confirmRes.status, JSON.stringify(confirmRes.body)).toBe(201);
+    const fulfillmentRes = await call(api, 'POST', `/api/v1/orders/${order.id}/fulfillments`, {
+      token: a.accessToken,
+      headers: { 'idempotency-key': '00000000-0000-7000-8000-0000000000ee' },
+      body: { lines: [{ orderItemId: order.lines[0].id, quantity: '1' }] },
+    });
+    expect(fulfillmentRes.status, JSON.stringify(fulfillmentRes.body)).toBe(201);
+    const fulfillment = fulfillmentRes.body;
+    const shipRes = await call(api, 'POST', `/api/v1/fulfillments/${fulfillment.id}/ship`, {
+      token: a.accessToken,
+      body: {},
+    });
+    expect(shipRes.status, JSON.stringify(shipRes.body)).toBe(201);
+    const orderReturnRes = await call(api, 'POST', `/api/v1/orders/${order.id}/returns`, {
+      token: a.accessToken,
+      headers: { 'idempotency-key': '00000000-0000-7000-8000-0000000000ff' },
+      body: { lines: [{ orderItemId: order.lines[0].id, quantity: '1' }] },
+    });
+    expect(orderReturnRes.status, JSON.stringify(orderReturnRes.body)).toBe(201);
+    const orderReturn = orderReturnRes.body;
+
     // Resource of tenant A for each route prefix; a new :id route must be added here.
     const idOfA: Record<string, string> = {
       '/api/v1/branches/:id': branch.id,
@@ -241,6 +291,19 @@ describe('access policy coverage (generated from every registered route)', () =>
       '/api/v1/pos/shifts/:id/cash-movements': shift.id,
       '/api/v1/pos/sales/:id': sale.orderId,
       '/api/v1/pos/sales/:id/refunds': sale.orderId,
+      '/api/v1/orders/:id': order.id,
+      '/api/v1/orders/:id/pay': order.id,
+      '/api/v1/orders/:id/confirm': order.id,
+      '/api/v1/orders/:id/cancel': order.id,
+      '/api/v1/orders/:id/hold': order.id,
+      '/api/v1/orders/:id/release-hold': order.id,
+      '/api/v1/orders/:id/returns': order.id,
+      '/api/v1/orders/:id/refunds': order.id,
+      '/api/v1/orders/:id/fulfillments': order.id,
+      '/api/v1/fulfillments/:id/pack': fulfillment.id,
+      '/api/v1/fulfillments/:id/ship': fulfillment.id,
+      '/api/v1/returns/:id': orderReturn.id,
+      '/api/v1/returns/:id/receive': orderReturn.id,
     };
 
     const withId = routes().filter((r) => r.url.includes(':id'));
@@ -252,7 +315,7 @@ describe('access policy coverage (generated from every registered route)', () =>
         token: b.accessToken, // tenant B's owner: every permission, wrong tenant
         // A valid body, so the only reason to fail is the foreign id.
         body: VALID_BODY[r.key] ?? {},
-        headers: { 'if-match': '"v1"', 'idempotency-key': `test:cross-tenant:${r.key}` },
+        headers: { 'if-match': '"v1"', 'idempotency-key': '00000000-0000-7000-8000-000000001111' },
       });
       expect({ route: r.key, status: res.status }).toEqual({ route: r.key, status: 404 });
     }

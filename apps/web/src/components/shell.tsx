@@ -22,6 +22,7 @@ const NAV: { href: string; label: string; permission?: string }[] = [
   { href: '/catalog/suppliers', label: 'ผู้จัดจำหน่าย', permission: 'supplier.read' },
   { href: '/inventory/stock', label: 'สต็อกสินค้า', permission: 'inventory.read' },
   { href: '/inventory/adjustments', label: 'ปรับสต็อก', permission: 'inventory.read' },
+  { href: '/orders', label: 'ออเดอร์', permission: 'order.read' },
   { href: '/settings/branches', label: 'สาขาและคลัง' },
   { href: '/settings/devices', label: 'เครื่อง POS', permission: 'device.manage' },
   { href: '/settings/users', label: 'ผู้ใช้งาน', permission: 'user.read' },

@@ -11,6 +11,7 @@ import {
   iam,
   inventory,
   notifications,
+  orders,
   pos,
   tenancy,
 } from '@stockos/core';
@@ -43,6 +44,8 @@ import { ReconciliationController } from './inventory/reconciliation.controller'
 import { ReservationsController } from './inventory/reservations.controller';
 import { PosDeviceSessionController, PosDevicesController } from './org/devices.controller';
 import { BranchesController, WarehousesController } from './org/org.controllers';
+import { FulfillmentsController, ReturnsController } from './orders/fulfillments.controller';
+import { OrdersController } from './orders/orders.controller';
 import { PosSessionsController } from './pos/sessions.controller';
 import { ShiftsController } from './pos/shifts.controller';
 import { SalesController } from './pos/sales.controller';
@@ -106,6 +109,10 @@ interface Services {
   shiftService: pos.ShiftService;
   saleService: pos.SaleService;
   refundService: pos.RefundService;
+  orderService: orders.OrderService;
+  fulfillmentService: orders.FulfillmentService;
+  returnService: orders.ReturnService;
+  orderRefundService: orders.RefundService;
 }
 
 @Module({})
@@ -146,6 +153,9 @@ class AppModule {
         PosSessionsController,
         ShiftsController,
         SalesController,
+        OrdersController,
+        FulfillmentsController,
+        ReturnsController,
       ],
       providers: [
         { provide: DB, useValue: deps.db },
@@ -181,6 +191,10 @@ class AppModule {
         { provide: pos.ShiftService, useValue: services.shiftService },
         { provide: pos.SaleService, useValue: services.saleService },
         { provide: pos.RefundService, useValue: services.refundService },
+        { provide: orders.OrderService, useValue: services.orderService },
+        { provide: orders.FulfillmentService, useValue: services.fulfillmentService },
+        { provide: orders.ReturnService, useValue: services.returnService },
+        { provide: orders.RefundService, useValue: services.orderRefundService },
       ],
     };
   }
@@ -233,6 +247,7 @@ export async function createApp(deps: AppDeps): Promise<NestFastifyApplication> 
   const deviceService = new tenancy.DeviceService(deps.db);
   const posPinService = new iam.PosPinService(deps.db);
   const shiftService = new pos.ShiftService(deviceService);
+  const reservationService = new inventory.ReservationService();
   const services: Services = {
     authService,
     roleService,
@@ -249,7 +264,7 @@ export async function createApp(deps: AppDeps): Promise<NestFastifyApplication> 
     priceService,
     importExportService: new catalog.ImportExportService(productService),
     inventoryQueryService: new inventory.InventoryQueryService(),
-    reservationService: new inventory.ReservationService(),
+    reservationService,
     adjustmentService: new inventory.AdjustmentService(),
     receivingService: new inventory.ReceivingService(),
     reconciliationService: new inventory.ReconciliationService(),
@@ -265,6 +280,10 @@ export async function createApp(deps: AppDeps): Promise<NestFastifyApplication> 
       deviceService,
     ),
     refundService: new pos.RefundService(posPinService, shiftService),
+    orderService: new orders.OrderService(productService, priceService, reservationService),
+    fulfillmentService: new orders.FulfillmentService(reservationService),
+    returnService: new orders.ReturnService(),
+    orderRefundService: new orders.RefundService(),
   };
 
   const app = await NestFactory.create<NestFastifyApplication>(AppModule.register(deps, services), adapter, {
