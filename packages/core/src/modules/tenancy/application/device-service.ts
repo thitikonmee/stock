@@ -72,6 +72,18 @@ export class DeviceService {
     return device;
   }
 
+  /**
+   * Resolve which branch/warehouse a device sells from, for the POS module (packages/core/src/modules/pos).
+   * No `device.manage` gate: a cashier's own request names its own device, not someone else's to manage —
+   * `sell()`/`open shift()` etc. authorize the *action* (`pos.sell` and so on), not device administration.
+   */
+  async forSale(tx: Tx, id: string): Promise<PosDevice> {
+    // No tenantId parameter needed: RLS already scopes `pos_devices` to the caller's tenant inside tenantTx.
+    const device = await this.find(tx, id);
+    if (device.status !== 'ACTIVE') throw new BusinessRuleError('DEVICE_NOT_ACTIVE', 'Device is not active');
+    return device;
+  }
+
   async create(
     tx: Tx,
     principal: Principal,

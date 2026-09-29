@@ -236,6 +236,40 @@ export class UserService {
     return this.getMember(tx, principal, membershipId);
   }
 
+  /** Employee code — how a cashier is looked up at PIN login (docs/05-pos.md §15). */
+  async setEmployeeCode(
+    tx: Tx,
+    principal: Principal,
+    membershipId: string,
+    employeeCode: string,
+  ): Promise<Member> {
+    assertCan(principal, 'user.manage');
+    if (!isUuid(membershipId)) throw new NotFoundError('Member not found');
+    const code = employeeCode.trim().toUpperCase();
+    if (!/^[A-Z0-9][A-Z0-9_-]{0,19}$/.test(code)) {
+      throw new ValidationError('Employee code must be 1-20 chars: A-Z, 0-9, _ or -');
+    }
+    try {
+      const { rows } = await sql`
+        update tenant_memberships set employee_code = ${code}, updated_at = now()
+         where id = ${membershipId} and status in ('ACTIVE', 'SUSPENDED') returning id`.execute(tx);
+      if (rows.length === 0) throw new NotFoundError('Member not found');
+    } catch (err) {
+      if (pgErrorCode(err) === PgErrorCode.UniqueViolation) {
+        throw new ConflictError(`Employee code ${code} is already assigned to another member`);
+      }
+      throw err;
+    }
+    await recordAudit(tx, {
+      tenantId: principal.tenantId,
+      action: 'membership.employee_code.set',
+      resourceType: 'membership',
+      resourceId: membershipId,
+      after: { employeeCode: code },
+    });
+    return this.getMember(tx, principal, membershipId);
+  }
+
   /**
    * Public endpoint. The token names its tenant, so the lookup runs under that tenant's RLS.
    * An existing user (member elsewhere) must prove their password; a new user sets one.

@@ -18,6 +18,7 @@ const InviteBody = z.strictObject({
 });
 const AssignBody = z.strictObject({ roles: z.array(RoleAssignmentSchema).max(20) });
 const StatusBody = z.strictObject({ status: z.enum(['ACTIVE', 'SUSPENDED']) });
+const EmployeeCodeBody = z.strictObject({ employeeCode: z.string().trim().min(1).max(20) });
 
 @Controller('users')
 export class UsersController {
@@ -99,6 +100,14 @@ export class UsersController {
   setStatus(@CurrentPrincipal() p: iam.Principal, @Param('id') id: string, @Body() body: unknown) {
     const { status } = parse(StatusBody, body);
     return tenantTx(this.db, p.tenantId, (tx) => this.users.setMemberStatus(tx, p, id, status));
+  }
+
+  /** Set the employee code a cashier logs into the POS with. */
+  @RequirePermission('user.manage')
+  @Put(':id/employee-code')
+  setEmployeeCode(@CurrentPrincipal() p: iam.Principal, @Param('id') id: string, @Body() body: unknown) {
+    const { employeeCode } = parse(EmployeeCodeBody, body);
+    return tenantTx(this.db, p.tenantId, (tx) => this.users.setEmployeeCode(tx, p, id, employeeCode));
   }
 
   /** Replace the member's role assignments. */

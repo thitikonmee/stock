@@ -16,13 +16,17 @@ import {
 type Ctx = { params: Promise<{ action: string }> };
 
 /** API endpoint and how its token response is turned into cookies, per session action. */
-const ACTIONS: Record<string, { path: string; auth?: 'access' | 'mfa' }> = {
+const ACTIONS: Record<string, { path: string; auth?: 'access' | 'mfa' | 'device' }> = {
   login: { path: '/auth/login' },
   signup: { path: '/auth/signup' },
   'accept-invite': { path: '/auth/invitations/accept' },
   mfa: { path: '/auth/mfa/verify', auth: 'mfa' },
   'step-up': { path: '/auth/step-up', auth: 'access' },
   logout: { path: '/auth/logout', auth: 'access' },
+  // Cashier PIN login (docs/05-pos.md §15): the POS terminal holds its own device token (stored in
+  // this browser, not a cookie — a device is not a person); the PIN response becomes a normal
+  // session, so every other /pos/* call afterwards is just an ordinary authenticated request.
+  'pos-login': { path: '/pos/sessions', auth: 'device' },
 };
 
 export async function POST(req: Request, ctx: Ctx): Promise<NextResponse> {
@@ -46,6 +50,14 @@ export async function POST(req: Request, ctx: Ctx): Promise<NextResponse> {
   if (spec.auth === 'access') {
     const access = jar.get(COOKIES.access)?.value;
     if (access) headers.authorization = `Bearer ${access}`;
+  }
+  if (spec.auth === 'device') {
+    const { deviceToken, ...rest } = payload;
+    if (typeof deviceToken !== 'string' || !deviceToken) {
+      return problem(400, 'VALIDATION_FAILED', 'deviceToken is required');
+    }
+    headers.authorization = `Device ${deviceToken}`;
+    payload = rest;
   }
 
   const res = await fetch(`${apiBase()}${spec.path}`, {

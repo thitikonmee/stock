@@ -124,6 +124,17 @@ export interface UnitConversion {
   isSalesUnit: boolean;
 }
 
+/** Just enough to price and tax a line at the register — POS reads this instead of the full Product tree. */
+export interface VariantSaleInfo {
+  id: string;
+  productId: string;
+  sku: string;
+  name: string;
+  sellingPrice: string;
+  taxClass: TaxClass;
+  status: VariantStatus;
+}
+
 export interface ProductListQuery {
   q?: string;
   categoryId?: string;
@@ -412,6 +423,53 @@ export class ProductService {
       return this.getVariantOrThrow(tx, id);
     }
     throw new ValidationError('Provide barcode or sku');
+  }
+
+  /** Price + tax lookup for the POS register (docs/05-pos.md scan → cart). */
+  async saleInfo(
+    tx: Tx,
+    principal: Principal,
+    params: { variantId?: string; barcode?: string; sku?: string },
+  ): Promise<VariantSaleInfo> {
+    assertCan(principal, 'product.read');
+    let variantId = params.variantId;
+    if (!variantId && params.barcode) {
+      const { rows } = await sql<{ variant_id: string }>`
+        select variant_id from variant_barcodes where barcode = ${params.barcode}`.execute(tx);
+      variantId = rows[0]?.variant_id;
+      if (!variantId) throw new NotFoundError('No variant for this barcode');
+    } else if (!variantId && params.sku) {
+      const { rows } = await sql<{ id: string }>`
+        select id from product_variants where sku = ${params.sku} and deleted_at is null`.execute(tx);
+      variantId = rows[0]?.id;
+      if (!variantId) throw new NotFoundError('No variant for this SKU');
+    }
+    if (!variantId || !isUuid(variantId)) throw new ValidationError('Provide variantId, barcode or sku');
+
+    const { rows } = await sql<{
+      id: string;
+      product_id: string;
+      sku: string;
+      name: string;
+      selling_price: string;
+      tax_class: TaxClass;
+      status: VariantStatus;
+    }>`
+      select v.id, v.product_id, v.sku, v.name, v.selling_price, p.tax_class, v.status
+        from product_variants v
+        join products p on p.id = v.product_id
+       where v.id = ${variantId} and v.deleted_at is null and p.deleted_at is null`.execute(tx);
+    const row = rows[0];
+    if (!row) throw new NotFoundError('Variant not found');
+    return {
+      id: row.id,
+      productId: row.product_id,
+      sku: row.sku,
+      name: row.name,
+      sellingPrice: row.selling_price,
+      taxClass: row.tax_class,
+      status: row.status,
+    };
   }
 
   // --- Barcodes ----------------------------------------------------------------

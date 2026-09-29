@@ -19,6 +19,16 @@ const MESSAGES: Record<string, string> = {
   PRODUCT_HAS_STOCK: 'ลบไม่ได้เพราะยังมีสต็อกคงเหลือ ให้ปรับสต็อกเป็น 0 ก่อน',
   NOT_A_BUNDLE: 'สินค้านี้ไม่ใช่ประเภทชุด (Bundle)',
   NOT_FOUND: 'ไม่พบข้อมูล',
+  SHIFT_ALREADY_OPEN: 'เครื่องนี้เปิดกะอยู่แล้ว',
+  SHIFT_NOT_OPEN: 'ยังไม่ได้เปิดกะ',
+  STOCK_INSUFFICIENT: 'สต็อกไม่พอ',
+  DISCOUNT_LIMIT_EXCEEDED: 'ส่วนลดเกินสิทธิ์ ต้องให้ผู้จัดการอนุมัติ',
+  MANAGER_APPROVAL_REQUIRED: 'ต้องให้ผู้จัดการอนุมัติรายการนี้',
+  PAYMENT_MISMATCH: 'ยอดชำระไม่ตรงกับยอดบิล',
+  REFUND_EXCEEDS_SOLD: 'จำนวนที่คืนเกินกว่าที่ขายไป',
+  REFUND_EXCEEDS_PAYMENT: 'ยอดคืนเงินเกินยอดที่ชำระไว้',
+  DEVICE_NOT_ACTIVE: 'เครื่องนี้ยังไม่ได้ลงทะเบียน หรือถูกปิดใช้งาน',
+  VARIANT_NOT_SELLABLE: 'สินค้านี้ขายไม่ได้ในขณะนี้',
 };
 
 export function messageFor(error: unknown): string {
