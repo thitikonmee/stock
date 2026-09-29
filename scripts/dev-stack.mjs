@@ -74,9 +74,13 @@ const pnpm = (() => {
 })();
 const run = (args) =>
   execFileSync(pnpm[0], [...pnpm.slice(1), ...args], { cwd: root, env, stdio: 'inherit' });
+// Build @stockos/api and its workspace deps (config, database, core, ...) first: `db:migrate` and
+// `db:local-roles` run @stockos/database's CLI, which needs @stockos/config's dist/ to exist. This
+// silently "worked" in any dev checkout that had already been built once (dist/ left over from a
+// prior `pnpm build`), but fails from a clean checkout — e.g. CI — with a bare MODULE_NOT_FOUND.
+run(['--filter', '@stockos/api...', 'build']);
 run(['db:migrate']);
 run(['db:local-roles']);
-run(['--filter', '@stockos/api...', 'build']);
 
 const children = [
   spawn('node', ['apps/api/dist/main.js'], { cwd: root, env: { ...env, PORT: '3000' }, stdio: 'inherit' }),
