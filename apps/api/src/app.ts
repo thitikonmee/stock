@@ -3,7 +3,7 @@ import { Module, type DynamicModule } from '@nestjs/common';
 import { NestFactory, Reflector } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { sql } from 'kysely';
-import { auth, billing, catalog, iam, notifications, tenancy } from '@stockos/core';
+import { auth, billing, catalog, iam, inventory, notifications, tenancy } from '@stockos/core';
 import { PgRateLimiter, type Db } from '@stockos/database';
 import { uuidv7, type Logger } from '@stockos/shared';
 import { AuthController } from './auth/auth.controller';
@@ -25,6 +25,11 @@ import { ApiKeysController } from './iam/api-keys.controller';
 import { MeController } from './iam/me.controller';
 import { PermissionsController, RolesController } from './iam/roles.controller';
 import { UsersController } from './iam/users.controller';
+import { AdjustmentsController } from './inventory/adjustments.controller';
+import { InventoryQueryController } from './inventory/query.controller';
+import { ReceivingController } from './inventory/receiving.controller';
+import { ReconciliationController } from './inventory/reconciliation.controller';
+import { ReservationsController } from './inventory/reservations.controller';
 import { PosDeviceSessionController, PosDevicesController } from './org/devices.controller';
 import { BranchesController, WarehousesController } from './org/org.controllers';
 import { DB, LOGGER, MAILER, READINESS_CHECK, WEB_BASE_URL, type ReadinessCheck } from './tokens';
@@ -76,6 +81,11 @@ interface Services {
   supplierService: catalog.SupplierService;
   priceService: catalog.PriceService;
   importExportService: catalog.ImportExportService;
+  inventoryQueryService: inventory.InventoryQueryService;
+  reservationService: inventory.ReservationService;
+  adjustmentService: inventory.AdjustmentService;
+  receivingService: inventory.ReceivingService;
+  reconciliationService: inventory.ReconciliationService;
 }
 
 @Module({})
@@ -107,6 +117,11 @@ class AppModule {
         JobsController,
         SuppliersController,
         PriceListsController,
+        InventoryQueryController,
+        ReservationsController,
+        AdjustmentsController,
+        ReceivingController,
+        ReconciliationController,
       ],
       providers: [
         { provide: DB, useValue: deps.db },
@@ -131,6 +146,11 @@ class AppModule {
         { provide: catalog.SupplierService, useValue: services.supplierService },
         { provide: catalog.PriceService, useValue: services.priceService },
         { provide: catalog.ImportExportService, useValue: services.importExportService },
+        { provide: inventory.InventoryQueryService, useValue: services.inventoryQueryService },
+        { provide: inventory.ReservationService, useValue: services.reservationService },
+        { provide: inventory.AdjustmentService, useValue: services.adjustmentService },
+        { provide: inventory.ReceivingService, useValue: services.receivingService },
+        { provide: inventory.ReconciliationService, useValue: services.reconciliationService },
       ],
     };
   }
@@ -194,6 +214,11 @@ export async function createApp(deps: AppDeps): Promise<NestFastifyApplication> 
     supplierService: new catalog.SupplierService(),
     priceService: new catalog.PriceService(),
     importExportService: new catalog.ImportExportService(productService),
+    inventoryQueryService: new inventory.InventoryQueryService(),
+    reservationService: new inventory.ReservationService(),
+    adjustmentService: new inventory.AdjustmentService(),
+    receivingService: new inventory.ReceivingService(),
+    reconciliationService: new inventory.ReconciliationService(),
   };
 
   const app = await NestFactory.create<NestFastifyApplication>(AppModule.register(deps, services), adapter, {

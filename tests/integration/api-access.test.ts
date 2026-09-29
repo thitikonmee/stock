@@ -133,6 +133,35 @@ describe('access policy coverage (generated from every registered route)', () =>
                            values (${a.tenantId}, ${'00000000-0000-7000-8000-0000000000aa'}, 'PRODUCT_IMPORT', 'COMPLETED', 0)
                            returning id`.execute(tx),
     ).then((r) => r.rows[0]!);
+    await call(api, 'POST', '/api/v1/inventory/receive', {
+      token: a.accessToken,
+      headers: { 'idempotency-key': `test:receive:${variant.id}` },
+      body: { lines: [{ warehouseId: warehouse.id, variantId: variant.id, quantity: '5' }] },
+    });
+    const [reservation] = (
+      await call(api, 'POST', '/api/v1/inventory/reserve', {
+        token: a.accessToken,
+        headers: { 'idempotency-key': `test:reserve:${variant.id}` },
+        body: {
+          referenceType: 'TEST',
+          referenceId: '00000000-0000-7000-8000-0000000000bb',
+          items: [{ warehouseId: warehouse.id, variantId: variant.id, quantity: '1' }],
+        },
+      })
+    ).body;
+    const adjustment = (
+      await call(api, 'POST', '/api/v1/inventory/adjustments', {
+        token: a.accessToken,
+        body: {
+          warehouseId: warehouse.id,
+          reasonCode: 'FOUND',
+          items: [{ variantId: variant.id, quantityDelta: '1' }],
+        },
+      })
+    ).body;
+    const reconciliationRun = (
+      await call(api, 'POST', '/api/v1/inventory/reconciliation-runs', { token: a.accessToken, body: {} })
+    ).body;
 
     // Resource of tenant A for each route prefix; a new :id route must be added here.
     const idOfA: Record<string, string> = {
@@ -160,6 +189,14 @@ describe('access policy coverage (generated from every registered route)', () =>
       '/api/v1/suppliers/:id': supplier.id,
       '/api/v1/suppliers/:id/products': supplier.id,
       '/api/v1/price-lists/:id/prices': priceList.id,
+      '/api/v1/inventory/reservations/:id': reservation.id,
+      '/api/v1/inventory/reservations/:id/release': reservation.id,
+      '/api/v1/inventory/reservations/:id/commit': reservation.id,
+      '/api/v1/inventory/adjustments/:id': adjustment.id,
+      '/api/v1/inventory/adjustments/:id/approve': adjustment.id,
+      '/api/v1/inventory/adjustments/:id/reject': adjustment.id,
+      '/api/v1/inventory/reconciliation-runs/:id': reconciliationRun.id,
+      '/api/v1/inventory/reconciliation-runs/:id/rebuild': reconciliationRun.id,
     };
 
     const withId = routes().filter((r) => r.url.includes(':id'));
