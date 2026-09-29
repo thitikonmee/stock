@@ -3,7 +3,17 @@ import { Module, type DynamicModule } from '@nestjs/common';
 import { NestFactory, Reflector } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { sql } from 'kysely';
-import { auth, billing, catalog, iam, inventory, notifications, tenancy } from '@stockos/core';
+import {
+  auth,
+  billing,
+  catalog,
+  customers,
+  iam,
+  inventory,
+  notifications,
+  pos,
+  tenancy,
+} from '@stockos/core';
 import { PgRateLimiter, type Db } from '@stockos/database';
 import { uuidv7, type Logger } from '@stockos/shared';
 import { AuthController } from './auth/auth.controller';
@@ -18,6 +28,7 @@ import { ProductsController } from './catalog/products.controller';
 import { SuppliersController } from './catalog/suppliers.controller';
 import { VariantsController } from './catalog/variants.controller';
 import { ProblemDetailsFilter } from './common/problem.filter';
+import { CustomersController } from './customers/customers.controller';
 import { RequestContextInterceptor } from './common/request-context.interceptor';
 import { HealthController } from './health/health.controller';
 import { BillingController, NotificationsController } from './iam/account.controllers';
@@ -32,6 +43,9 @@ import { ReconciliationController } from './inventory/reconciliation.controller'
 import { ReservationsController } from './inventory/reservations.controller';
 import { PosDeviceSessionController, PosDevicesController } from './org/devices.controller';
 import { BranchesController, WarehousesController } from './org/org.controllers';
+import { PosSessionsController } from './pos/sessions.controller';
+import { ShiftsController } from './pos/shifts.controller';
+import { SalesController } from './pos/sales.controller';
 import { DB, LOGGER, MAILER, READINESS_CHECK, WEB_BASE_URL, type ReadinessCheck } from './tokens';
 
 export interface AppDeps {
@@ -86,6 +100,12 @@ interface Services {
   adjustmentService: inventory.AdjustmentService;
   receivingService: inventory.ReceivingService;
   reconciliationService: inventory.ReconciliationService;
+  posPinService: iam.PosPinService;
+  customerService: customers.CustomerService;
+  cashierSessionService: pos.CashierSessionService;
+  shiftService: pos.ShiftService;
+  saleService: pos.SaleService;
+  refundService: pos.RefundService;
 }
 
 @Module({})
@@ -122,6 +142,10 @@ class AppModule {
         AdjustmentsController,
         ReceivingController,
         ReconciliationController,
+        CustomersController,
+        PosSessionsController,
+        ShiftsController,
+        SalesController,
       ],
       providers: [
         { provide: DB, useValue: deps.db },
@@ -151,6 +175,12 @@ class AppModule {
         { provide: inventory.AdjustmentService, useValue: services.adjustmentService },
         { provide: inventory.ReceivingService, useValue: services.receivingService },
         { provide: inventory.ReconciliationService, useValue: services.reconciliationService },
+        { provide: iam.PosPinService, useValue: services.posPinService },
+        { provide: customers.CustomerService, useValue: services.customerService },
+        { provide: pos.CashierSessionService, useValue: services.cashierSessionService },
+        { provide: pos.ShiftService, useValue: services.shiftService },
+        { provide: pos.SaleService, useValue: services.saleService },
+        { provide: pos.RefundService, useValue: services.refundService },
       ],
     };
   }
@@ -198,27 +228,43 @@ export async function createApp(deps: AppDeps): Promise<NestFastifyApplication> 
   const roleService = new iam.RoleService();
   const authService = new auth.AuthService(deps.db, deps.auth);
   const productService = new catalog.ProductService();
+  const priceService = new catalog.PriceService();
   const imageStorage = catalog.createImageStorage(deps.storage);
+  const deviceService = new tenancy.DeviceService(deps.db);
+  const posPinService = new iam.PosPinService(deps.db);
+  const shiftService = new pos.ShiftService(deviceService);
   const services: Services = {
     authService,
     roleService,
     userService: new auth.UserService(deps.db, roleService, authService, deps.auth.hasher),
     orgService: new tenancy.OrgService(),
     apiKeyService: new auth.ApiKeyService(deps.db),
-    deviceService: new tenancy.DeviceService(deps.db),
+    deviceService,
     notificationService: new notifications.NotificationService(),
     planService: new billing.PlanService(),
     catalogMasterDataService: new catalog.CatalogMasterDataService(),
     productService,
     imageService: new catalog.ImageService(imageStorage),
     supplierService: new catalog.SupplierService(),
-    priceService: new catalog.PriceService(),
+    priceService,
     importExportService: new catalog.ImportExportService(productService),
     inventoryQueryService: new inventory.InventoryQueryService(),
     reservationService: new inventory.ReservationService(),
     adjustmentService: new inventory.AdjustmentService(),
     receivingService: new inventory.ReceivingService(),
     reconciliationService: new inventory.ReconciliationService(),
+    posPinService,
+    customerService: new customers.CustomerService(),
+    cashierSessionService: new pos.CashierSessionService(posPinService, authService),
+    shiftService,
+    saleService: new pos.SaleService(
+      productService,
+      priceService,
+      shiftService,
+      posPinService,
+      deviceService,
+    ),
+    refundService: new pos.RefundService(posPinService, shiftService),
   };
 
   const app = await NestFactory.create<NestFastifyApplication>(AppModule.register(deps, services), adapter, {

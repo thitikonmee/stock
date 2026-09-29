@@ -151,3 +151,59 @@ export async function addMember(
     membershipId: me.body.membershipId as string,
   };
 }
+
+export interface RegisteredDevice {
+  id: string;
+  code: string;
+  deviceToken: string;
+  branchId: string;
+  warehouseId: string;
+}
+
+/** Create and register a POS device, returning a ready-to-use device token. */
+export async function registerDevice(
+  api: Api,
+  owner: SignedUpTenant,
+  opts: { branchId: string; warehouseId: string; code?: string },
+): Promise<RegisteredDevice> {
+  const code = opts.code ?? `D${uuidv7().slice(-8).toUpperCase()}`;
+  const created = await call(api, 'POST', '/api/v1/pos-devices', {
+    token: owner.accessToken,
+    body: { code, name: code, branchId: opts.branchId, warehouseId: opts.warehouseId },
+  });
+  expect(created.status, JSON.stringify(created.body)).toBe(201);
+  const registered = await call(api, 'POST', '/api/v1/pos/devices/register', {
+    body: { tenantSlug: owner.slug, registrationCode: created.body.registrationCode, platform: 'WEB' },
+  });
+  expect(registered.status, JSON.stringify(registered.body)).toBe(200);
+  return {
+    id: created.body.id as string,
+    code,
+    deviceToken: registered.body.deviceToken as string,
+    branchId: opts.branchId,
+    warehouseId: opts.warehouseId,
+  };
+}
+
+/** Set a member's employee code + PIN, the two things cashier PIN login needs. */
+export async function setUpCashier(
+  api: Api,
+  owner: SignedUpTenant,
+  membershipId: string,
+  memberAccessToken: string,
+  opts: { employeeCode?: string; pin?: string } = {},
+): Promise<{ employeeCode: string; pin: string }> {
+  const employeeCode = opts.employeeCode ?? `E${uuidv7().slice(-8).toUpperCase()}`;
+  const pin = opts.pin ?? '1234';
+  const coded = await call(api, 'PUT', `/api/v1/users/${membershipId}/employee-code`, {
+    token: owner.accessToken,
+    body: { employeeCode },
+  });
+  expect(coded.status, JSON.stringify(coded.body)).toBe(200);
+  const pinned = await call(api, 'POST', '/api/v1/me/pos-pin', {
+    token: memberAccessToken,
+    body: { pin },
+  });
+  expect(pinned.status, JSON.stringify(pinned.body)).toBe(204);
+  return { employeeCode, pin };
+}

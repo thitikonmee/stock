@@ -1,5 +1,11 @@
 export { RoleService, type CreateRoleInput, type UpdateRoleInput } from './application/role-service';
 export {
+  PosPinService,
+  DEFAULT_POS_PIN_CONFIG,
+  type PinVerified,
+  type PosPinConfig,
+} from './application/pos-pin-service';
+export {
   ALL_PERMISSIONS,
   PERMISSION_CATALOG,
   isDangerous,

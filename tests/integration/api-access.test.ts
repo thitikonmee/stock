@@ -37,6 +37,7 @@ const PUBLIC_ROUTES = new Set([
 const VALID_BODY: Record<string, unknown> = {
   'PUT /api/v1/users/:id/roles': { roles: [] },
   'PATCH /api/v1/users/:id': { status: 'SUSPENDED' },
+  'PUT /api/v1/users/:id/employee-code': { employeeCode: 'EMP1' },
   'POST /api/v1/products/:id/variants': { sku: 'X1' },
   'POST /api/v1/products/:id/images': { contentType: 'image/png', dataBase64: 'AAAA' },
   'POST /api/v1/products/:id/units': { unitId: '00000000-0000-7000-8000-000000000000', factorToBase: '12' },
@@ -46,6 +47,13 @@ const VALID_BODY: Record<string, unknown> = {
   },
   'POST /api/v1/suppliers/:id/products': { variantId: '00000000-0000-7000-8000-000000000000' },
   'PUT /api/v1/price-lists/:id/prices': { variantId: '00000000-0000-7000-8000-000000000000', price: '10.00' },
+  'POST /api/v1/pos/shifts/:id/close': { countedCash: '0.00' },
+  'POST /api/v1/pos/shifts/:id/cash-movements': { type: 'PAY_IN', amount: '1.00' },
+  'POST /api/v1/pos/sales/:id/refunds': {
+    shiftId: '00000000-0000-7000-8000-000000000000',
+    lines: [{ orderItemId: '00000000-0000-7000-8000-000000000000', quantity: '1' }],
+    reason: 'test',
+  },
 };
 
 type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -103,7 +111,12 @@ describe('access policy coverage (generated from every registered route)', () =>
     const product = (
       await call(api, 'POST', '/api/v1/products', {
         token: a.accessToken,
-        body: { code: 'PROD-A', name: 'Product A', baseUnitId: unit.id, variants: [{ sku: 'SKU-A1' }] },
+        body: {
+          code: 'PROD-A',
+          name: 'Product A',
+          baseUnitId: unit.id,
+          variants: [{ sku: 'SKU-A1', sellingPrice: '100.00' }],
+        },
       })
     ).body;
     const variant = product.variants[0];
@@ -162,6 +175,30 @@ describe('access policy coverage (generated from every registered route)', () =>
     const reconciliationRun = (
       await call(api, 'POST', '/api/v1/inventory/reconciliation-runs', { token: a.accessToken, body: {} })
     ).body;
+    const customer = (
+      await call(api, 'POST', '/api/v1/customers', { token: a.accessToken, body: { name: 'Walk-in A' } })
+    ).body;
+    await call(api, 'POST', '/api/v1/pos/devices/register', {
+      body: { tenantSlug: a.slug, registrationCode: device.registrationCode, platform: 'WEB' },
+    });
+    const shift = (
+      await call(api, 'POST', '/api/v1/pos/shifts', {
+        token: a.accessToken,
+        body: { posDeviceId: device.id, openingCash: '0.00' },
+      })
+    ).body;
+    const sale = (
+      await call(api, 'POST', '/api/v1/pos/sales', {
+        token: a.accessToken,
+        body: {
+          posDeviceId: device.id,
+          shiftId: shift.id,
+          clientTxnId: '00000000-0000-7000-8000-0000000000cc',
+          lines: [{ variantId: variant.id, quantity: '1' }],
+          payments: [{ method: 'CASH', amount: '100.00', tenderedAmount: '100.00' }],
+        },
+      })
+    ).body;
 
     // Resource of tenant A for each route prefix; a new :id route must be added here.
     const idOfA: Record<string, string> = {
@@ -170,6 +207,7 @@ describe('access policy coverage (generated from every registered route)', () =>
       '/api/v1/roles/:id': role.id,
       '/api/v1/users/:id': member.membershipId,
       '/api/v1/users/:id/roles': member.membershipId,
+      '/api/v1/users/:id/employee-code': member.membershipId,
       '/api/v1/users/invitations/:id': invitation.invitationId,
       '/api/v1/api-keys/:id': apiKey.id,
       '/api/v1/pos-devices/:id': device.id,
@@ -197,6 +235,12 @@ describe('access policy coverage (generated from every registered route)', () =>
       '/api/v1/inventory/adjustments/:id/reject': adjustment.id,
       '/api/v1/inventory/reconciliation-runs/:id': reconciliationRun.id,
       '/api/v1/inventory/reconciliation-runs/:id/rebuild': reconciliationRun.id,
+      '/api/v1/customers/:id': customer.id,
+      '/api/v1/pos/shifts/:id': shift.id,
+      '/api/v1/pos/shifts/:id/close': shift.id,
+      '/api/v1/pos/shifts/:id/cash-movements': shift.id,
+      '/api/v1/pos/sales/:id': sale.orderId,
+      '/api/v1/pos/sales/:id/refunds': sale.orderId,
     };
 
     const withId = routes().filter((r) => r.url.includes(':id'));
@@ -208,7 +252,7 @@ describe('access policy coverage (generated from every registered route)', () =>
         token: b.accessToken, // tenant B's owner: every permission, wrong tenant
         // A valid body, so the only reason to fail is the foreign id.
         body: VALID_BODY[r.key] ?? {},
-        headers: { 'if-match': '"v1"' },
+        headers: { 'if-match': '"v1"', 'idempotency-key': `test:cross-tenant:${r.key}` },
       });
       expect({ route: r.key, status: res.status }).toEqual({ route: r.key, status: 404 });
     }

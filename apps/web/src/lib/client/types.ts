@@ -314,3 +314,73 @@ export interface Adjustment {
   approvedBy: string | null;
   items: AdjustmentItem[];
 }
+
+export interface Variant {
+  id: string;
+  sku: string;
+  name: string;
+  sellingPrice: string;
+  status: 'ACTIVE' | 'INACTIVE' | 'ARCHIVED';
+  barcodes: string[];
+}
+
+export type ShiftStatus = 'OPEN' | 'CLOSED' | 'RECONCILED';
+export interface Shift {
+  id: string;
+  posDeviceId: string;
+  cashierId: string;
+  status: ShiftStatus;
+  openedAt: string;
+  closedAt: string | null;
+  openingCash: string;
+  expectedCash: string | null;
+  countedCash: string | null;
+  cashVariance: string | null;
+  summary: { byMethod?: Record<string, string>; salesCount?: number; refundTotal?: string } | null;
+  closedBy: string | null;
+}
+
+export type PosPaymentMethod =
+  'CASH' | 'CREDIT_CARD' | 'DEBIT_CARD' | 'PROMPTPAY' | 'QR' | 'BANK_TRANSFER' | 'STORE_CREDIT' | 'VOUCHER';
+
+export interface SaleLine {
+  orderItemId: string;
+  lineNo: number;
+  variantId: string;
+  sku: string;
+  name: string;
+  quantity: string;
+  unitPrice: string;
+  taxRate: string;
+  discountAmount: string;
+  taxAmount: string;
+  lineTotal: string;
+}
+export interface Sale {
+  orderId: string;
+  orderNo: string;
+  status: string;
+  subtotal: string;
+  discountTotal: string;
+  taxTotal: string;
+  rounding: string;
+  grandTotal: string;
+  changeAmount: string;
+  lines: SaleLine[];
+  payments: { id: string; method: PosPaymentMethod; amount: string; changeAmount: string }[];
+  placedAt: string;
+}
+
+export interface ManagerOverride {
+  employeeCode: string;
+  pin: string;
+}
+
+export interface Customer {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  totalSpent: string;
+  orderCount: number;
+}

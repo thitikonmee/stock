@@ -22,6 +22,7 @@ export {
   type UnitConversion,
   type Variant,
   type VariantInput,
+  type VariantSaleInfo,
   type VariantStatus,
   type VariantUpdateInput,
 } from './application/product-service';

@@ -97,6 +97,43 @@ export class PriceService {
     return rows.map(toPrice);
   }
 
+  /**
+   * Effective selling price for one variant: the best matching tier on `priceListCode` (default
+   * RETAIL), falling back to `product_variants.selling_price` when the list has no row for it.
+   */
+  async resolve(
+    tx: Tx,
+    principal: Principal,
+    variantId: string,
+    opts: { priceListCode?: string; quantity?: string } = {},
+  ): Promise<{ price: string; priceListId: string | null; priceIncludesTax: boolean }> {
+    assertCan(principal, 'price.read');
+    const code = opts.priceListCode ?? RETAIL_CODE;
+    const qty = opts.quantity ?? '1';
+    const { rows } = await sql<{
+      price_list_id: string;
+      price: string;
+      price_includes_tax: boolean;
+    }>`
+      select pr.price_list_id, pr.price, pl.price_includes_tax
+        from prices pr
+        join price_lists pl on pl.id = pr.price_list_id
+       where pl.code = ${code} and pr.variant_id = ${variantId}
+         and pr.min_qty <= ${qty}::numeric and now() between pr.valid_from and pr.valid_to
+       order by pr.min_qty desc limit 1`.execute(tx);
+    if (rows[0]) {
+      return {
+        price: rows[0].price,
+        priceListId: rows[0].price_list_id,
+        priceIncludesTax: rows[0].price_includes_tax,
+      };
+    }
+    const { rows: variantRows } = await sql<{ selling_price: string }>`
+      select selling_price from product_variants where id = ${variantId} and deleted_at is null`.execute(tx);
+    if (!variantRows[0]) throw new NotFoundError('Unknown variant', { variantId });
+    return { price: variantRows[0].selling_price, priceListId: null, priceIncludesTax: true };
+  }
+
   /** Upsert the flat price for a variant on a list (min_qty = 1, always valid). */
   async setPrice(
     tx: Tx,
