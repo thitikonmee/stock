@@ -72,6 +72,10 @@ export default function DevicesPage() {
         description="สร้างเครื่องแล้วนำรหัสลงทะเบียนไปใส่ในแอป POS ภายใน 15 นาที"
         actions={
           <Button
+            // Disabled (not just gracefully degraded) until branches/warehouses have loaded: opening
+            // the form earlier leaves the required "warehouse" select stuck on its placeholder
+            // option, and the "create" submit then silently no-ops on browser-native validation.
+            disabled={!branches || !warehouses}
             onClick={() => {
               const branchId = branches?.[0]?.id ?? '';
               setForm({
