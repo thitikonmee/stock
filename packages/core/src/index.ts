@@ -6,5 +6,6 @@ export * as customers from './modules/customers/public-api';
 export * as iam from './modules/iam/public-api';
 export * as inventory from './modules/inventory/public-api';
 export * as notifications from './modules/notifications/public-api';
+export * as orders from './modules/orders/public-api';
 export * as pos from './modules/pos/public-api';
 export * as tenancy from './modules/tenancy/public-api';

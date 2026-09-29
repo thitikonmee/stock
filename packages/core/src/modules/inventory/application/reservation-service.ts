@@ -127,6 +127,45 @@ export class ReservationService {
     return this.getOrThrow(tx, id);
   }
 
+  /** The reverse of `commit`: a COMMITTED hold given back (e.g. order cancelled after confirmation). */
+  async uncommit(tx: Tx, principal: Principal, id: string): Promise<Reservation> {
+    assertCan(principal, 'inventory.read');
+    const r = await this.getOrThrow(tx, id);
+    if (r.status !== 'COMMITTED') {
+      throw new BusinessRuleError('RESERVATION_NOT_COMMITTED', `Reservation is ${r.status}, not COMMITTED`);
+    }
+    const remaining = new Dec(r.quantity).minus(r.releasedQty).minus(r.fulfilledQty);
+    await this.engine.apply(tx, {
+      tenantId: principal.tenantId,
+      operation: 'UNCOMMIT',
+      idempotencyKey: `reservation:${id}:uncommit`,
+      reference: { type: r.referenceType, id: r.referenceId },
+      lines: [{ warehouseId: r.warehouseId, variantId: r.variantId, quantity: formatQuantity(remaining) }],
+    });
+    return this.updateStatus(tx, id, {
+      releasedDelta: formatQuantity(remaining),
+      fullQty: r.quantity,
+      terminalStatus: 'RELEASED',
+    });
+  }
+
+  /** Record that `quantity` of a COMMITTED hold left the building (a shipment). Does not itself move
+   *  stock — the caller applies InventoryEngine's SHIP operation; this just keeps the reservation's
+   *  own bookkeeping (`fulfilled_qty`) in step so its status flips to FULFILLED once fully shipped. */
+  async markFulfilled(tx: Tx, principal: Principal, id: string, quantity: string): Promise<Reservation> {
+    assertCan(principal, 'inventory.read');
+    const { rows } = await sql<ReservationRow>`
+      update inventory_reservations
+         set fulfilled_qty = fulfilled_qty + ${quantity}::numeric,
+             status = case when released_qty + fulfilled_qty + ${quantity}::numeric >= quantity
+                           then 'FULFILLED' else 'PARTIALLY_FULFILLED' end
+       where id = ${id} and tenant_id = ${principal.tenantId}
+      returning ${cols}`.execute(tx);
+    const row = rows[0];
+    if (!row) throw new NotFoundError('Reservation not found');
+    return toReservation(row);
+  }
+
   async get(tx: Tx, principal: Principal, id: string): Promise<Reservation> {
     assertCan(principal, 'inventory.read');
     return this.getOrThrow(tx, id);

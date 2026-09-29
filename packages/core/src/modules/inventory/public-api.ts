@@ -5,6 +5,7 @@ export { BUCKETS, LEDGER_TRANSACTION_TYPES, OPERATIONS, isOperation } from './do
 export type { Bucket, Operation, OperationSpec } from './domain/operations';
 export type { BalanceSnapshot, MovementCommand, MovementLineInput, MovementResult } from './domain/types';
 export { readBalances, syncNegativeStockPolicy } from './infrastructure/balance-repository';
+export { readAvgCost } from './infrastructure/cost-repository';
 
 export {
   InventoryQueryService,

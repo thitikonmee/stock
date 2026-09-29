@@ -29,6 +29,15 @@ const MESSAGES: Record<string, string> = {
   REFUND_EXCEEDS_PAYMENT: 'ยอดคืนเงินเกินยอดที่ชำระไว้',
   DEVICE_NOT_ACTIVE: 'เครื่องนี้ยังไม่ได้ลงทะเบียน หรือถูกปิดใช้งาน',
   VARIANT_NOT_SELLABLE: 'สินค้านี้ขายไม่ได้ในขณะนี้',
+  INVALID_STATE_TRANSITION: 'ทำรายการนี้ไม่ได้กับสถานะปัจจุบันของออเดอร์',
+  ORDER_NOT_FULFILLABLE: 'ออเดอร์ยังไม่พร้อมสำหรับการจัดส่ง',
+  OVER_FULFILL: 'จำนวนที่จัดส่งเกินกว่าที่เหลืออยู่ในออเดอร์',
+  OVER_RETURN: 'จำนวนที่ขอคืนเกินกว่าที่จัดส่งไปแล้ว',
+  RETURN_NOT_RECEIVABLE: 'รายการคืนนี้ไม่อยู่ในสถานะที่รับของได้',
+  NOT_READY_TO_SHIP: 'ยังจัดส่งไม่ได้ในสถานะนี้',
+  NOT_PICKING: 'ต้องอยู่ในขั้นตอนหยิบสินค้าก่อนจึงจะแพ็กได้',
+  ORDER_CANCELLED: 'ออเดอร์นี้ถูกยกเลิกแล้ว',
+  DISCOUNT_EXCEEDS_LINE: 'ส่วนลดเกินยอดของรายการนี้',
 };
 
 export function messageFor(error: unknown): string {
