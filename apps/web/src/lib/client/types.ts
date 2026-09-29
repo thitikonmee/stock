@@ -248,3 +248,69 @@ export interface UnitConversion {
   isPurchaseUnit: boolean;
   isSalesUnit: boolean;
 }
+
+// --- Inventory (Phase 3) ----------------------------------------------------------
+
+export interface StockBalance {
+  warehouseId: string;
+  variantId: string;
+  sku: string;
+  variantName: string;
+  onHand: string;
+  reserved: string;
+  committed: string;
+  damaged: string;
+  incoming: string;
+  available: string;
+  lowStockThreshold: string | null;
+  version: string;
+}
+export interface StockBalancePage {
+  data: StockBalance[];
+  page: { nextCursor: string | null };
+}
+
+export interface LedgerLine {
+  id: string;
+  createdAt: string;
+  occurredAt: string;
+  transactionType: string;
+  bucket: string;
+  quantity: string;
+  beforeQuantity: string;
+  afterQuantity: string;
+  unitCost: string | null;
+  referenceType: string;
+  referenceId: string;
+  reasonCode: string | null;
+  note: string | null;
+}
+export interface LedgerPage {
+  data: LedgerLine[];
+  page: { nextCursor: string | null };
+}
+
+export type AdjustmentStatus =
+  'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'POSTED' | 'REJECTED' | 'CANCELLED';
+export type AdjustmentReasonCode =
+  'DAMAGE' | 'LOST' | 'FOUND' | 'COUNT_ERROR' | 'EXPIRED' | 'OPENING' | 'OTHER';
+
+export interface AdjustmentItem {
+  id: string;
+  variantId: string;
+  bucket: 'ON_HAND' | 'DAMAGED';
+  quantityDelta: string;
+  unitCost: string | null;
+  note: string | null;
+}
+export interface Adjustment {
+  id: string;
+  docNo: string;
+  warehouseId: string;
+  reasonCode: AdjustmentReasonCode;
+  status: AdjustmentStatus;
+  note: string | null;
+  requestedBy: string;
+  approvedBy: string | null;
+  items: AdjustmentItem[];
+}
