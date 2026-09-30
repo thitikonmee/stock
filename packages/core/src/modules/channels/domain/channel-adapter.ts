@@ -113,6 +113,11 @@ export interface NormalizedOrderLine {
   quantity: string;
   unitPrice: string;
   discount: string;
+  /** Platforms whose status lives per line, not per order (Lazada, TikTok packages) set this;
+   *  `normalizedStatus` on the order itself is still the adapter's derived, order-level summary —
+   *  see `lazada-adapter.ts`'s `deriveOrderStatus`. Omitted entirely for order-level platforms
+   *  (Shopee), where every line always matches the order's own status. */
+  lineStatus?: NormalizedOrderStatus;
 }
 
 export interface NormalizedChannelOrder {

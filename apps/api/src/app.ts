@@ -80,6 +80,8 @@ export interface AppDeps {
   auth: auth.AuthConfig;
   /** Shopee Open Platform partner credentials; omit to leave the SHOPEE adapter unregistered. */
   shopee?: channels.ShopeeConfig;
+  /** Lazada Open Platform app credentials; omit to leave the LAZADA adapter unregistered. */
+  lazada?: channels.LazadaConfig;
   corsOrigins?: string[];
   /** Defaults to `select 1` against `db`. */
   readinessCheck?: ReadinessCheck;
@@ -309,6 +311,7 @@ export async function createApp(deps: AppDeps): Promise<NestFastifyApplication> 
 
   const channelRegistry = new channels.AdapterRegistry();
   if (deps.shopee) channelRegistry.register(new channels.ShopeeAdapter(deps.shopee));
+  if (deps.lazada) channelRegistry.register(new channels.LazadaAdapter(deps.lazada));
   const channelVault = new channels.CredentialVault(deps.auth.secretBox);
   const channelTokens = new channels.TokenManager(channelRegistry, channelVault);
   const channelPolicies = new channels.StockPolicyService();

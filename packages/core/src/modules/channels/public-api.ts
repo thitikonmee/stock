@@ -55,5 +55,19 @@ export { loadChannelAccount } from './application/account-repository';
 
 export { ShopeeAdapter, type ShopeeConfig } from './adapters/shopee/shopee-adapter';
 export { ShopeeFixtureServer } from './adapters/shopee/fixtures/fixture-fetcher';
-export { buildSign, verifyWebhookSignature } from './adapters/shopee/signing';
+export {
+  buildSign as buildShopeeSign,
+  verifyWebhookSignature as verifyShopeeWebhookSignature,
+} from './adapters/shopee/signing';
 export { mapShopeeOrderStatus } from './adapters/shopee/status-map';
+
+export { LazadaAdapter, type LazadaConfig } from './adapters/lazada/lazada-adapter';
+export { LazadaFixtureServer } from './adapters/lazada/fixtures/fixture-fetcher';
+export {
+  buildSign as buildLazadaSign,
+  verifyWebhookSignature as verifyLazadaWebhookSignature,
+} from './adapters/lazada/signing';
+export {
+  mapLazadaLineStatus,
+  deriveOrderStatus as deriveLazadaOrderStatus,
+} from './adapters/lazada/status-map';
