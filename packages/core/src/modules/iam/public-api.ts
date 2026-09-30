@@ -15,7 +15,9 @@ export {
 export {
   assertCan,
   can,
+  systemPrincipal,
   tenantWidePermissions,
+  SYSTEM_ACTOR_ID,
   type Grant,
   type Principal,
   type ResourceScope,

@@ -195,6 +195,19 @@ export class OrderService {
     return (await this.loadOrder(tx, orderId))!;
   }
 
+  /** Marks a shipped order delivered — staff confirming a COD/phone order, or a channel's
+   *  DELIVERED webhook (docs/06 Shopee status TO_CONFIRM_RECEIVE). No inventory effect. */
+  async deliver(tx: Tx, principal: Principal, orderId: string): Promise<Order> {
+    assertCan(principal, 'order.update');
+    return this.applyEvent(tx, principal, orderId, 'DELIVER');
+  }
+
+  /** Closes out a delivered order. No inventory effect. */
+  async complete(tx: Tx, principal: Principal, orderId: string): Promise<Order> {
+    assertCan(principal, 'order.update');
+    return this.applyEvent(tx, principal, orderId, 'COMPLETE');
+  }
+
   async cancel(tx: Tx, principal: Principal, orderId: string, reason?: string): Promise<Order> {
     assertCan(principal, 'order.cancel');
     return this.applyEvent(tx, principal, orderId, 'CANCEL', async () => {

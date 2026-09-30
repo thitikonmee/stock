@@ -7,6 +7,7 @@ import {
   auth,
   billing,
   catalog,
+  channels,
   customers,
   iam,
   inventory,
@@ -31,6 +32,15 @@ import { VariantsController } from './catalog/variants.controller';
 import { ProblemDetailsFilter } from './common/problem.filter';
 import { CustomersController } from './customers/customers.controller';
 import { RequestContextInterceptor } from './common/request-context.interceptor';
+import { setRawBody } from './common/raw-body';
+import {
+  ChannelAccountsController,
+  ChannelMappingsController,
+  ChannelReconciliationController,
+  ChannelStockPoliciesController,
+  ChannelsController,
+} from './channels/channels.controller';
+import { WebhooksController } from './channels/webhooks.controller';
 import { HealthController } from './health/health.controller';
 import { BillingController, NotificationsController } from './iam/account.controllers';
 import { ApiKeysController } from './iam/api-keys.controller';
@@ -49,12 +59,27 @@ import { OrdersController } from './orders/orders.controller';
 import { PosSessionsController } from './pos/sessions.controller';
 import { ShiftsController } from './pos/shifts.controller';
 import { SalesController } from './pos/sales.controller';
-import { DB, LOGGER, MAILER, READINESS_CHECK, WEB_BASE_URL, type ReadinessCheck } from './tokens';
+import {
+  API_BASE_URL,
+  DB,
+  LOGGER,
+  MAILER,
+  PLATFORM_DB,
+  READINESS_CHECK,
+  WEB_BASE_URL,
+  type ReadinessCheck,
+} from './tokens';
 
 export interface AppDeps {
   db: Db;
+  /** BYPASSRLS role, for the webhook gateway's shop_id -> tenant_id lookup. Defaults to `db`
+   *  (fine for tests/dev where the app role already has the rows visible via RLS-off paths it
+   *  doesn't use; real deploys must pass the actual `stockos_platform` connection). */
+  platformDb?: Db;
   logger: Logger;
   auth: auth.AuthConfig;
+  /** Shopee Open Platform partner credentials; omit to leave the SHOPEE adapter unregistered. */
+  shopee?: channels.ShopeeConfig;
   corsOrigins?: string[];
   /** Defaults to `select 1` against `db`. */
   readinessCheck?: ReadinessCheck;
@@ -64,6 +89,8 @@ export interface AppDeps {
   mailer?: notifications.EmailSender;
   /** Public URL of the web app for e-mailed links. */
   webBaseUrl?: string;
+  /** This API's own public URL — a marketplace's OAuth redirect must land back on it. */
+  apiBaseUrl?: string;
   /** proxy-addr list of trusted proxies (default: loopback + private ranges). */
   trustProxy?: string;
   /** Where product images are stored; defaults to a local `.uploads` directory (no S3 needed). */
@@ -113,6 +140,14 @@ interface Services {
   fulfillmentService: orders.FulfillmentService;
   returnService: orders.ReturnService;
   orderRefundService: orders.RefundService;
+  channelAccountService: channels.ChannelAccountService;
+  mappingService: channels.MappingService;
+  stockSyncService: channels.StockSyncService;
+  stockPolicyService: channels.StockPolicyService;
+  reconciliationServiceChannels: channels.ReconciliationService;
+  webhookService: channels.WebhookService;
+  webhookQueryService: channels.WebhookQueryService;
+  syncJobService: channels.SyncJobService;
 }
 
 @Module({})
@@ -156,12 +191,20 @@ class AppModule {
         OrdersController,
         FulfillmentsController,
         ReturnsController,
+        ChannelsController,
+        ChannelAccountsController,
+        ChannelMappingsController,
+        ChannelStockPoliciesController,
+        ChannelReconciliationController,
+        WebhooksController,
       ],
       providers: [
         { provide: DB, useValue: deps.db },
+        { provide: PLATFORM_DB, useValue: deps.platformDb ?? deps.db },
         { provide: LOGGER, useValue: deps.logger },
         { provide: MAILER, useValue: deps.mailer ?? new notifications.MemoryEmailSender() },
         { provide: WEB_BASE_URL, useValue: (deps.webBaseUrl ?? 'http://localhost:3100').replace(/\/$/, '') },
+        { provide: API_BASE_URL, useValue: (deps.apiBaseUrl ?? 'http://localhost:3000').replace(/\/$/, '') },
         {
           provide: READINESS_CHECK,
           useValue: deps.readinessCheck ?? (async () => void (await sql`select 1`.execute(deps.db))),
@@ -195,6 +238,14 @@ class AppModule {
         { provide: orders.FulfillmentService, useValue: services.fulfillmentService },
         { provide: orders.ReturnService, useValue: services.returnService },
         { provide: orders.RefundService, useValue: services.orderRefundService },
+        { provide: channels.ChannelAccountService, useValue: services.channelAccountService },
+        { provide: channels.MappingService, useValue: services.mappingService },
+        { provide: channels.StockSyncService, useValue: services.stockSyncService },
+        { provide: channels.StockPolicyService, useValue: services.stockPolicyService },
+        { provide: channels.ReconciliationService, useValue: services.reconciliationServiceChannels },
+        { provide: channels.WebhookService, useValue: services.webhookService },
+        { provide: channels.WebhookQueryService, useValue: services.webhookQueryService },
+        { provide: channels.SyncJobService, useValue: services.syncJobService },
       ],
     };
   }
@@ -223,6 +274,9 @@ export async function createApp(deps: AppDeps): Promise<NestFastifyApplication> 
   const defaultJsonParser = fastify.getDefaultJsonParser('error', 'error');
   fastify.removeContentTypeParser('application/json');
   fastify.addContentTypeParser('application/json', { parseAs: 'string' }, (request, body, done) => {
+    // Stashed before parsing: a webhook signature is computed over these exact bytes (see
+    // common/raw-body.ts) — re-serializing the parsed object would not reliably reproduce them.
+    if (typeof body === 'string') setRawBody(request, body);
     if (body === '' || (typeof body === 'string' && body.trim() === '')) return done(null, undefined);
     defaultJsonParser(request, body as string, done);
   });
@@ -248,6 +302,23 @@ export async function createApp(deps: AppDeps): Promise<NestFastifyApplication> 
   const posPinService = new iam.PosPinService(deps.db);
   const shiftService = new pos.ShiftService(deviceService);
   const reservationService = new inventory.ReservationService();
+  const notificationService = new notifications.NotificationService();
+  const inventoryQueryService = new inventory.InventoryQueryService();
+  const orderService = new orders.OrderService(productService, priceService, reservationService);
+  const fulfillmentService = new orders.FulfillmentService(reservationService);
+
+  const channelRegistry = new channels.AdapterRegistry();
+  if (deps.shopee) channelRegistry.register(new channels.ShopeeAdapter(deps.shopee));
+  const channelVault = new channels.CredentialVault(deps.auth.secretBox);
+  const channelTokens = new channels.TokenManager(channelRegistry, channelVault);
+  const channelPolicies = new channels.StockPolicyService();
+  const orderIngestService = new channels.OrderIngestService(
+    reservationService,
+    orderService,
+    fulfillmentService,
+    notificationService,
+  );
+
   const services: Services = {
     authService,
     roleService,
@@ -255,7 +326,7 @@ export async function createApp(deps: AppDeps): Promise<NestFastifyApplication> 
     orgService: new tenancy.OrgService(),
     apiKeyService: new auth.ApiKeyService(deps.db),
     deviceService,
-    notificationService: new notifications.NotificationService(),
+    notificationService,
     planService: new billing.PlanService(),
     catalogMasterDataService: new catalog.CatalogMasterDataService(),
     productService,
@@ -263,7 +334,7 @@ export async function createApp(deps: AppDeps): Promise<NestFastifyApplication> 
     supplierService: new catalog.SupplierService(),
     priceService,
     importExportService: new catalog.ImportExportService(productService),
-    inventoryQueryService: new inventory.InventoryQueryService(),
+    inventoryQueryService,
     reservationService,
     adjustmentService: new inventory.AdjustmentService(),
     receivingService: new inventory.ReceivingService(),
@@ -280,10 +351,38 @@ export async function createApp(deps: AppDeps): Promise<NestFastifyApplication> 
       deviceService,
     ),
     refundService: new pos.RefundService(posPinService, shiftService),
-    orderService: new orders.OrderService(productService, priceService, reservationService),
-    fulfillmentService: new orders.FulfillmentService(reservationService),
+    orderService,
+    fulfillmentService,
     returnService: new orders.ReturnService(),
     orderRefundService: new orders.RefundService(),
+    channelAccountService: new channels.ChannelAccountService(
+      channelRegistry,
+      channelVault,
+      deps.auth.secretBox,
+    ),
+    mappingService: new channels.MappingService(channelRegistry, channelTokens, productService),
+    stockSyncService: new channels.StockSyncService(
+      channelRegistry,
+      channelTokens,
+      inventoryQueryService,
+      channelPolicies,
+    ),
+    stockPolicyService: channelPolicies,
+    reconciliationServiceChannels: new channels.ReconciliationService(
+      channelRegistry,
+      channelTokens,
+      inventoryQueryService,
+      channelPolicies,
+    ),
+    webhookService: new channels.WebhookService(
+      channelRegistry,
+      channelTokens,
+      orderIngestService,
+      deps.db,
+      deps.platformDb ?? deps.db,
+    ),
+    webhookQueryService: new channels.WebhookQueryService(),
+    syncJobService: new channels.SyncJobService(channelRegistry, channelTokens, orderIngestService),
   };
 
   const app = await NestFactory.create<NestFastifyApplication>(AppModule.register(deps, services), adapter, {

@@ -56,6 +56,14 @@ export const EnvSchema = z.object({
   /** Proxies whose X-Forwarded-For is trusted (proxy-addr syntax: names, IPs, CIDRs). */
   TRUST_PROXY: z.string().default('loopback,uniquelocal'),
   PUBLIC_WEB_BASE_URL: z.string().url().default('http://localhost:3100'),
+  /** Where a marketplace's OAuth redirect lands — must be this API's own public origin. */
+  PUBLIC_API_BASE_URL: z.string().url().default('http://localhost:3000'),
+  SHOPEE_PARTNER_ID: z.string().optional(),
+  SHOPEE_PARTNER_KEY: z.string().optional(),
+  SHOPEE_API_BASE_URL: z.string().url().default('https://partner.shopeemobile.com'),
+  /** Dev/demo only: swap the adapter's transport for the in-memory fixture server instead of real
+   *  Shopee (see channels.ShopeeFixtureServer) — never set true in staging/prod. */
+  SHOPEE_FIXTURE_MODE: z.coerce.boolean().default(false),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().positive().default(1025),
   SMTP_USER: z.string().optional(),
