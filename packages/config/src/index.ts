@@ -64,6 +64,12 @@ export const EnvSchema = z.object({
   /** Dev/demo only: swap the adapter's transport for the in-memory fixture server instead of real
    *  Shopee (see channels.ShopeeFixtureServer) — never set true in staging/prod. */
   SHOPEE_FIXTURE_MODE: z.coerce.boolean().default(false),
+  LAZADA_APP_KEY: z.string().optional(),
+  LAZADA_APP_SECRET: z.string().optional(),
+  LAZADA_API_BASE_URL: z.string().url().default('https://api.lazada.co.th/rest'),
+  LAZADA_AUTH_BASE_URL: z.string().url().default('https://auth.lazada.com/rest'),
+  /** Dev/demo only, same caveat as SHOPEE_FIXTURE_MODE. */
+  LAZADA_FIXTURE_MODE: z.coerce.boolean().default(false),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().positive().default(1025),
   SMTP_USER: z.string().optional(),

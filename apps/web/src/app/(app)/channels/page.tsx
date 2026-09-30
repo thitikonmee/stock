@@ -41,7 +41,7 @@ export default function ChannelsPage() {
   const { me } = useMe();
   const { data: accounts, error, loading } = useResource<ChannelAccount[]>('/channel-accounts');
   const [banner, setBanner] = useState<{ tone: 'success' | 'warning'; text: string } | null>(null);
-  const [connecting, setConnecting] = useState(false);
+  const [connecting, setConnecting] = useState<'shopee' | 'lazada' | null>(null);
   const [connectError, setConnectError] = useState<unknown>();
 
   useEffect(() => {
@@ -51,16 +51,16 @@ export default function ChannelsPage() {
     if (q.get('connected') || q.get('error')) window.history.replaceState({}, '', '/channels');
   }, []);
 
-  async function connectShopee() {
-    setConnecting(true);
+  async function connect(channelCode: 'shopee' | 'lazada') {
+    setConnecting(channelCode);
     setConnectError(undefined);
     try {
-      const res = await api<{ authorizeUrl: string }>('/channels/shopee/connect', { method: 'POST' });
+      const res = await api<{ authorizeUrl: string }>(`/channels/${channelCode}/connect`, { method: 'POST' });
       window.open(res.authorizeUrl, '_blank', 'noopener');
     } catch (err) {
       setConnectError(err);
     } finally {
-      setConnecting(false);
+      setConnecting(null);
     }
   }
 
@@ -71,9 +71,14 @@ export default function ChannelsPage() {
         description="เชื่อมต่อร้านค้าบนมาร์เก็ตเพลส (Shopee ฯลฯ) — sync สต็อก รับออเดอร์อัตโนมัติ"
         actions={
           can(me, 'channel.manage') ? (
-            <Button onClick={connectShopee} busy={connecting}>
-              เชื่อม Shopee
-            </Button>
+            <div className="flex gap-2">
+              <Button onClick={() => connect('shopee')} busy={connecting === 'shopee'}>
+                เชื่อม Shopee
+              </Button>
+              <Button variant="secondary" onClick={() => connect('lazada')} busy={connecting === 'lazada'}>
+                เชื่อม Lazada
+              </Button>
+            </div>
           ) : undefined
         }
       />
