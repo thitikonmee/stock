@@ -31,6 +31,7 @@ import type {
 import { useResource } from '@/lib/client/use-resource';
 
 const STATUS_TONE = { DRAFT: 'amber', ACTIVE: 'green', ARCHIVED: 'slate' } as const;
+const STATUS_LABEL = { DRAFT: 'ฉบับร่าง', ACTIVE: 'เปิดขาย', ARCHIVED: 'ปิดขาย' } as const;
 
 export default function ProductEditorPage() {
   const { id } = useParams<{ id: string }>();
@@ -47,9 +48,14 @@ export default function ProductEditorPage() {
   return (
     <>
       <PageHeader
+        breadcrumb={[
+          { label: 'สินค้า', href: '/catalog/products' },
+          { label: 'รายการสินค้า', href: '/catalog/products' },
+          { label: p.name },
+        ]}
         title={p.name}
         description={`รหัสสินค้า ${p.code}`}
-        actions={<Badge tone={STATUS_TONE[p.status]}>{p.status}</Badge>}
+        actions={<Badge tone={STATUS_TONE[p.status]}>{STATUS_LABEL[p.status]}</Badge>}
       />
       <div className="space-y-6">
         <ProductDetailsCard

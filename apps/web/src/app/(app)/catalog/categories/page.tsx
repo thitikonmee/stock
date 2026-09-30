@@ -21,7 +21,11 @@ import { useResource } from '@/lib/client/use-resource';
 export default function CategoriesBrandsUnitsPage() {
   return (
     <>
-      <PageHeader title="หมวดหมู่ / แบรนด์ / หน่วยนับ" description="ข้อมูลหลักของสินค้า" />
+      <PageHeader
+        breadcrumb={[{ label: 'สินค้า', href: '/catalog/products' }, { label: 'หมวดหมู่/แบรนด์/หน่วย' }]}
+        title="หมวดหมู่ / แบรนด์ / หน่วยนับ"
+        description="ข้อมูลหลักของสินค้า"
+      />
       <div className="grid gap-6 lg:grid-cols-2">
         <CategoriesCard />
         <BrandsCard />

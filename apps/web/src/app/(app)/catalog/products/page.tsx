@@ -2,11 +2,34 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Badge, Button, Card, ErrorBox, Input, Loading, PageHeader, Table, Td } from '@/components/ui';
+import { Search } from 'lucide-react';
+import {
+  Badge,
+  Button,
+  Card,
+  ConfirmDialog,
+  ErrorBox,
+  Input,
+  Loading,
+  PageHeader,
+  Table,
+  Td,
+} from '@/components/ui';
 import { api, apiDownload } from '@/lib/client/api';
 import type { Brand, Category, Product, ProductPage } from '@/lib/client/types';
 
+const STATUS_LABEL = { DRAFT: 'ฉบับร่าง', ACTIVE: 'เปิดขาย', ARCHIVED: 'ปิดขาย' } as const;
 const STATUS_TONE = { DRAFT: 'amber', ACTIVE: 'green', ARCHIVED: 'slate' } as const;
+
+function priceLabel(product: Product): string {
+  const prices = [...new Set(product.variants.map((v) => v.sellingPrice))];
+  if (prices.length === 0) return '—';
+  if (prices.length === 1) return `฿${Number(prices[0]).toLocaleString('th-TH')}`;
+  const nums = prices.map(Number).sort((a, b) => a - b);
+  return `฿${nums[0]!.toLocaleString('th-TH')} - ${nums[nums.length - 1]!.toLocaleString('th-TH')}`;
+}
+
+type BulkAction = { kind: 'archive' | 'activate' | 'delete'; ids: string[] } | null;
 
 export default function ProductsPage() {
   const [q, setQ] = useState('');
@@ -17,6 +40,9 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>();
   const [exporting, setExporting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulk, setBulk] = useState<BulkAction>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async (query: string, cursor?: string) => {
@@ -55,6 +81,47 @@ export default function ProductsPage() {
   const brandName = (id: string | null) => brands.find((b) => b.id === id)?.name ?? '—';
   const categoryName = (id: string | null) => categories.find((c) => c.id === id)?.name ?? '—';
 
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    setSelected((prev) => (prev.size === products.length ? new Set() : new Set(products.map((p) => p.id))));
+  }
+
+  async function runBulk() {
+    if (!bulk) return;
+    setBulkBusy(true);
+    setError(undefined);
+    try {
+      for (const id of bulk.ids) {
+        const product = products.find((p) => p.id === id);
+        if (!product) continue;
+        if (bulk.kind === 'delete') {
+          await api(`/products/${id}`, { method: 'DELETE' });
+        } else {
+          await api(`/products/${id}`, {
+            method: 'PATCH',
+            headers: { 'if-match': `"v${product.version}"` },
+            body: { status: bulk.kind === 'archive' ? 'ARCHIVED' : 'ACTIVE' },
+          });
+        }
+      }
+      setSelected(new Set());
+      setBulk(null);
+      await load(q);
+    } catch (err) {
+      setError(err);
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   return (
     <>
       <PageHeader
@@ -89,17 +156,76 @@ export default function ProductsPage() {
           </div>
         }
       />
-      <div className="mb-4 max-w-sm">
-        <Input placeholder="ค้นหาชื่อสินค้า, รหัส, SKU…" value={q} onChange={(e) => setQ(e.target.value)} />
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <div className="max-w-sm flex-1">
+          <Input
+            icon={<Search className="size-4" />}
+            placeholder="ค้นหาชื่อสินค้า, รหัส, SKU…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+        </div>
+        {selected.size > 0 ? (
+          <div className="flex items-center gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-1.5 text-sm text-brand-800">
+            <span>เลือก {selected.size} รายการ</span>
+            <Button
+              variant="dark"
+              className="h-8 px-3 text-xs"
+              onClick={() => setBulk({ kind: 'archive', ids: [...selected] })}
+            >
+              ปิดขาย
+            </Button>
+            <Button
+              variant="success"
+              className="h-8 px-3 text-xs"
+              onClick={() => setBulk({ kind: 'activate', ids: [...selected] })}
+            >
+              เปิดขาย
+            </Button>
+            <Button
+              variant="danger"
+              className="h-8 px-3 text-xs"
+              onClick={() => setBulk({ kind: 'delete', ids: [...selected] })}
+            >
+              ลบสินค้า
+            </Button>
+          </div>
+        ) : null}
       </div>
       <ErrorBox error={error} />
       <Card>
         <Table
-          head={['รหัส', 'ชื่อสินค้า', 'แบรนด์', 'หมวดหมู่', 'จำนวน SKU', 'สถานะ']}
+          head={[
+            products.length > 0 ? (
+              <input
+                type="checkbox"
+                checked={selected.size === products.length}
+                onChange={toggleAll}
+                aria-label="เลือกทั้งหมด"
+              />
+            ) : (
+              ''
+            ),
+            'รหัส',
+            'ชื่อสินค้า',
+            'แบรนด์',
+            'หมวดหมู่',
+            'จำนวน SKU',
+            'ราคาขาย',
+            'สถานะ',
+          ]}
           empty={!loading && products.length === 0}
         >
           {products.map((p) => (
             <tr key={p.id}>
+              <Td>
+                <input
+                  type="checkbox"
+                  checked={selected.has(p.id)}
+                  onChange={() => toggle(p.id)}
+                  aria-label={`เลือก ${p.name}`}
+                />
+              </Td>
               <Td className="font-mono">{p.code}</Td>
               <Td>
                 <Link href={`/catalog/products/${p.id}`} className="text-brand-700 hover:underline">
@@ -109,8 +235,9 @@ export default function ProductsPage() {
               <Td className="text-slate-600">{brandName(p.brandId)}</Td>
               <Td className="text-slate-600">{categoryName(p.categoryId)}</Td>
               <Td>{p.variants.length}</Td>
+              <Td>{priceLabel(p)}</Td>
               <Td>
-                <Badge tone={STATUS_TONE[p.status]}>{p.status}</Badge>
+                <Badge tone={STATUS_TONE[p.status]}>{STATUS_LABEL[p.status]}</Badge>
               </Td>
             </tr>
           ))}
@@ -124,6 +251,30 @@ export default function ProductsPage() {
           </div>
         ) : null}
       </Card>
+
+      <ConfirmDialog
+        open={bulk !== null}
+        onClose={() => setBulk(null)}
+        onConfirm={() => void runBulk()}
+        busy={bulkBusy}
+        tone={bulk?.kind === 'delete' ? 'danger' : bulk?.kind === 'activate' ? 'success' : 'neutral'}
+        title={
+          bulk?.kind === 'delete'
+            ? 'คุณกำลังจะลบสินค้าที่เลือก'
+            : bulk?.kind === 'activate'
+              ? 'คุณกำลังจะเปิดขายสินค้าที่เลือก'
+              : 'คุณกำลังจะปิดขายสินค้าที่เลือก'
+        }
+        description={
+          bulk?.kind === 'delete'
+            ? 'สินค้าจะไม่สามารถแสดงหรือขายได้อีก และไม่สามารถกู้คืนได้ กรุณาตรวจสอบก่อนยืนยัน'
+            : bulk?.kind === 'activate'
+              ? 'สินค้าจะสามารถแสดงและขายได้ทันทีหลังยืนยัน'
+              : 'สินค้าจะไม่สามารถขายได้จนกว่าจะเปิดขายอีกครั้ง'
+        }
+        confirmWord={bulk?.kind === 'delete' ? 'ลบสินค้าที่เลือก' : undefined}
+        actionLabel={bulk?.kind === 'delete' ? 'ลบสินค้า' : bulk?.kind === 'activate' ? 'เปิดขาย' : 'ปิดขาย'}
+      />
     </>
   );
 }

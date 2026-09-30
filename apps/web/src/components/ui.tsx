@@ -224,7 +224,17 @@ export function Badge({
   );
 }
 
-export function Table({ head, children, empty }: { head: string[]; children: ReactNode; empty?: boolean }) {
+export function Table({
+  head,
+  children,
+  empty,
+}: {
+  /** Plain strings for text headers; pass a `ReactNode` (e.g. a select-all checkbox) for a column
+   *  that needs interactive header content. */
+  head: (string | ReactNode)[];
+  children: ReactNode;
+  empty?: boolean;
+}) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left text-sm">
