@@ -38,6 +38,8 @@ const MESSAGES: Record<string, string> = {
   NOT_PICKING: 'ต้องอยู่ในขั้นตอนหยิบสินค้าก่อนจึงจะแพ็กได้',
   ORDER_CANCELLED: 'ออเดอร์นี้ถูกยกเลิกแล้ว',
   DISCOUNT_EXCEEDS_LINE: 'ส่วนลดเกินยอดของรายการนี้',
+  CHANNEL_NOT_CONNECTED: 'ยังไม่ได้เชื่อมต่อช่องทางนี้',
+  CHANNEL_DISCONNECTED: 'ช่องทางนี้ถูกยกเลิกการเชื่อมต่อไปแล้ว',
 };
 
 export function messageFor(error: unknown): string {

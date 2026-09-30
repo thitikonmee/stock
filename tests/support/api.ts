@@ -6,7 +6,7 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { expect } from 'vitest';
 import { createApp } from '@stockos/api/app';
 import { DEFAULT_RATE_LIMITS, type RateLimits } from '@stockos/api/auth/rate-limit.guard';
-import type { auth, notifications } from '@stockos/core';
+import type { auth, channels, notifications } from '@stockos/core';
 import { createLogger, uuidv7 } from '@stockos/shared';
 import { testAuthConfig } from './auth-config';
 import type { TestDatabase } from './test-db';
@@ -21,15 +21,22 @@ const NO_RATE_LIMITS: RateLimits = Object.fromEntries(
 export async function createTestApi(
   db: TestDatabase,
   authOverrides: Partial<auth.AuthConfig> = {},
-  appOverrides: { rateLimits?: Partial<RateLimits>; mailer?: notifications.EmailSender } = {},
+  appOverrides: {
+    rateLimits?: Partial<RateLimits>;
+    mailer?: notifications.EmailSender;
+    shopee?: channels.ShopeeConfig;
+  } = {},
 ): Promise<Api> {
   return createApp({
     db: db.app,
+    platformDb: db.platform,
     logger: createLogger('test', 'error'),
     auth: testAuthConfig(authOverrides),
     rateLimits: { ...NO_RATE_LIMITS, ...appOverrides.rateLimits },
     ...(appOverrides.mailer ? { mailer: appOverrides.mailer } : {}),
+    ...(appOverrides.shopee ? { shopee: appOverrides.shopee } : {}),
     webBaseUrl: 'https://app.stockos.test',
+    apiBaseUrl: 'https://api.stockos.test',
     // Product images: a throwaway temp dir per test file, never the repo's own .uploads/.
     storage: { localDir: mkdtempSync(join(tmpdir(), 'stockos-uploads-')) },
   });

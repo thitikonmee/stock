@@ -1,7 +1,7 @@
 import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { registeredRoutes } from '@stockos/api/app';
-import { iam } from '@stockos/core';
+import { channels, iam } from '@stockos/core';
 import { platformTx } from '@stockos/database';
 import { addMember, call, createTestApi, signup, type Api, type SignedUpTenant } from '../support/api';
 import { createTestDatabase, type TestDatabase } from '../support/test-db';
@@ -10,10 +10,23 @@ let db: TestDatabase;
 let api: Api;
 let a: SignedUpTenant;
 let b: SignedUpTenant;
+let fixture: channels.ShopeeFixtureServer;
 
 beforeAll(async () => {
   db = await createTestDatabase();
-  api = await createTestApi(db);
+  fixture = new channels.ShopeeFixtureServer();
+  api = await createTestApi(
+    db,
+    {},
+    {
+      shopee: {
+        partnerId: '2000000',
+        partnerKey: 'access_test_key',
+        baseUrl: 'https://partner.shopeemobile.test',
+        fetcher: fixture.fetcher(),
+      },
+    },
+  );
   a = await signup(api, 'A');
   b = await signup(api, 'B');
 });
@@ -32,6 +45,8 @@ const PUBLIC_ROUTES = new Set([
   'POST /api/v1/auth/refresh',
   'POST /api/v1/auth/invitations/accept',
   'POST /api/v1/pos/devices/register',
+  'GET /api/v1/channels/:channelCode/callback',
+  'POST /api/v1/webhooks/:channelCode',
 ]);
 
 const VALID_BODY: Record<string, unknown> = {
@@ -68,6 +83,10 @@ const VALID_BODY: Record<string, unknown> = {
   'POST /api/v1/returns/:id/receive': {
     lines: [{ orderItemId: '00000000-0000-7000-8000-000000000000', condition: 'SELLABLE' }],
   },
+  'PUT /api/v1/channel-accounts/:id/default-warehouse': {
+    warehouseId: '00000000-0000-7000-8000-000000000000',
+  },
+  'PUT /api/v1/channel-mappings/:id': { variantId: null },
 };
 
 type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -250,6 +269,44 @@ describe('access policy coverage (generated from every registered route)', () =>
     expect(orderReturnRes.status, JSON.stringify(orderReturnRes.body)).toBe(201);
     const orderReturn = orderReturnRes.body;
 
+    const connectRes = await call(api, 'POST', '/api/v1/channels/shopee/connect', { token: a.accessToken });
+    expect(connectRes.status, JSON.stringify(connectRes.body)).toBe(201);
+    fixture.issuedShopId = 900001;
+    const callbackRes = await call(
+      api,
+      'GET',
+      `/api/v1/channels/shopee/callback?state=${encodeURIComponent(connectRes.body.state)}&code=x&shop_id=900001`,
+    );
+    expect(callbackRes.status).toBe(302);
+    const channelAccountId = new URL(String(callbackRes.headers.location), 'https://x.test').searchParams.get(
+      'connected',
+    )!;
+    expect(channelAccountId).toBeTruthy();
+    fixture.addProduct({
+      itemId: 90001,
+      name: 'Access Test Product',
+      status: 'NORMAL',
+      variants: [{ modelId: 1, modelSku: 'NEVER-MATCHES-ANYTHING', name: 'Default', price: 1, stock: 1 }],
+    });
+    const importRes = await call(
+      api,
+      'POST',
+      `/api/v1/channel-accounts/${channelAccountId}/mappings/import`,
+      {
+        token: a.accessToken,
+      },
+    );
+    expect(importRes.status, JSON.stringify(importRes.body)).toBe(201);
+    const mappingsRes = await call(api, 'GET', `/api/v1/channel-accounts/${channelAccountId}/mappings`, {
+      token: a.accessToken,
+    });
+    const channelMapping = mappingsRes.body[0];
+    const reconciliationRunChannel = (
+      await call(api, 'POST', `/api/v1/channel-accounts/${channelAccountId}/reconciliation-runs`, {
+        token: a.accessToken,
+      })
+    ).body;
+
     // Resource of tenant A for each route prefix; a new :id route must be added here.
     const idOfA: Record<string, string> = {
       '/api/v1/branches/:id': branch.id,
@@ -294,6 +351,8 @@ describe('access policy coverage (generated from every registered route)', () =>
       '/api/v1/orders/:id': order.id,
       '/api/v1/orders/:id/pay': order.id,
       '/api/v1/orders/:id/confirm': order.id,
+      '/api/v1/orders/:id/deliver': order.id,
+      '/api/v1/orders/:id/complete': order.id,
       '/api/v1/orders/:id/cancel': order.id,
       '/api/v1/orders/:id/hold': order.id,
       '/api/v1/orders/:id/release-hold': order.id,
@@ -304,6 +363,21 @@ describe('access policy coverage (generated from every registered route)', () =>
       '/api/v1/fulfillments/:id/ship': fulfillment.id,
       '/api/v1/returns/:id': orderReturn.id,
       '/api/v1/returns/:id/receive': orderReturn.id,
+      '/api/v1/channel-accounts/:id': channelAccountId,
+      '/api/v1/channel-accounts/:id/default-warehouse': channelAccountId,
+      '/api/v1/channel-accounts/:id/pause': channelAccountId,
+      '/api/v1/channel-accounts/:id/resume': channelAccountId,
+      '/api/v1/channel-accounts/:id/disconnect': channelAccountId,
+      '/api/v1/channel-accounts/:id/mappings': channelAccountId,
+      '/api/v1/channel-accounts/:id/mappings/import': channelAccountId,
+      '/api/v1/channel-accounts/:id/sync/stock': channelAccountId,
+      '/api/v1/channel-accounts/:id/sync/orders': channelAccountId,
+      '/api/v1/channel-accounts/:id/sync-jobs': channelAccountId,
+      '/api/v1/channel-accounts/:id/webhook-events': channelAccountId,
+      '/api/v1/channel-accounts/:id/reconciliation-runs': channelAccountId,
+      '/api/v1/channel-mappings/:id': channelMapping.id,
+      '/api/v1/reconciliation-runs/:id': reconciliationRunChannel.id,
+      '/api/v1/reconciliation-runs/:id/items': reconciliationRunChannel.id,
     };
 
     const withId = routes().filter((r) => r.url.includes(':id'));

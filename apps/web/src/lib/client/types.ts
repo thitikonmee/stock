@@ -477,3 +477,104 @@ export interface OrderRefund {
   amount: string;
   status: string;
 }
+
+// --- Channels (Phase 6) -----------------------------------------------------------
+
+export type ChannelAccountStatus =
+  'CONNECTING' | 'CONNECTED' | 'TOKEN_EXPIRED' | 'ERROR' | 'PAUSED' | 'DISCONNECTED';
+
+export interface ChannelAccount {
+  id: string;
+  channelCode: string;
+  externalShopId: string;
+  shopName: string | null;
+  region: string;
+  status: ChannelAccountStatus;
+  defaultWarehouseId: string | null;
+  settings: Record<string, unknown>;
+  lastOrderSyncAt: string | null;
+  lastError: string | null;
+  createdAt: string;
+}
+
+export type MappingStatus = 'UNMAPPED' | 'AUTO_MAPPED' | 'CONFIRMED' | 'CONFLICT' | 'BROKEN';
+
+export interface ChannelProductVariantRow {
+  id: string;
+  channelAccountId: string;
+  channelProductId: string;
+  externalItemId: string;
+  externalVariantId: string;
+  externalSku: string | null;
+  productTitle: string | null;
+  variantId: string | null;
+  sku: string | null;
+  quantityMultiplier: string;
+  mappingStatus: MappingStatus;
+  mappingMethod: string | null;
+  syncStock: boolean;
+  lastPushedQty: string | null;
+  lastPushedAt: string | null;
+  lastChannelQty: string | null;
+  updatedAt: string;
+}
+
+export interface StockPolicyRow {
+  id: string;
+  channelAccountId: string | null;
+  variantId: string | null;
+  strategy: 'GLOBAL_POOL' | 'CHANNEL_ALLOCATION';
+  safetyStock: string;
+  bufferPercent: string;
+  maxPushQty: string | null;
+  pushZeroBelow: string;
+}
+
+export interface SyncJobRow {
+  id: string;
+  channelAccountId: string | null;
+  jobType: string;
+  status: 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'DEAD' | 'CANCELLED';
+  attempts: number;
+  output: unknown;
+  lastError: string | null;
+  scheduledAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+export interface WebhookEventRow {
+  id: string;
+  channelCode: string;
+  channelAccountId: string | null;
+  eventType: string;
+  externalRef: string | null;
+  signatureValid: boolean;
+  status: 'RECEIVED' | 'PROCESSING' | 'PROCESSED' | 'IGNORED' | 'FAILED' | 'DEAD';
+  attempts: number;
+  lastError: string | null;
+  receivedAt: string;
+  processedAt: string | null;
+}
+
+export interface ReconciliationRunRow {
+  id: string;
+  type: string;
+  channelAccountId: string | null;
+  status: 'RUNNING' | 'COMPLETED' | 'FAILED';
+  checkedCount: number;
+  mismatchCount: number;
+  startedAt: string;
+  finishedAt: string | null;
+}
+
+export interface ReconciliationItemRow {
+  id: string;
+  variantId: string | null;
+  channelProductVariantId: string | null;
+  expectedQty: string | null;
+  actualQty: string | null;
+  diff: string | null;
+  classification: string | null;
+  resolution: string | null;
+}

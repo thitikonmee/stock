@@ -67,3 +67,35 @@ export function assertCan(principal: Principal, permission: PermissionCode, scop
 export function tenantWidePermissions(principal: Principal): ReadonlySet<PermissionCode> {
   return new Set(principal.grants.filter((g) => g.scopeType === 'TENANT').map((g) => g.permission));
 }
+
+/** Not backed by any real membership row — no FK relies on it, it exists only to satisfy
+ *  `assertCan`/audit's `actor_id` column, which are informational (no FK to tenant_memberships). */
+export const SYSTEM_ACTOR_ID = '00000000-0000-0000-0000-000000000000';
+
+/**
+ * A non-interactive principal for background/webhook-triggered work that still needs to call
+ * Principal-gated services (e.g. a Shopee webhook creating/advancing an order through
+ * `orders.OrderService`, which has no logged-in user behind it). Granted exactly the permissions
+ * the caller asks for, tenant-wide — never persisted, never returned from a login flow.
+ */
+export function systemPrincipal(tenantId: string, permissions: readonly PermissionCode[]): Principal {
+  return {
+    kind: 'API_KEY',
+    userId: SYSTEM_ACTOR_ID,
+    tenantId,
+    membershipId: SYSTEM_ACTOR_ID,
+    sessionId: null,
+    apiKeyId: null,
+    isOwner: false,
+    grants: permissions.map((permission) => ({
+      permission,
+      scopeType: 'TENANT',
+      scopeId: null,
+      constraints: {},
+    })),
+    amr: ['system'],
+    authTime: Math.floor(Date.now() / 1000),
+    mfaEnabled: false,
+    mfaEnforced: false,
+  };
+}

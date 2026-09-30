@@ -98,6 +98,18 @@ export class OrdersController {
     return tenantTx(this.db, p.tenantId, (tx) => this.ordersService.confirm(tx, p, id));
   }
 
+  @RequirePermission('order.update')
+  @Post(':id/deliver')
+  deliver(@CurrentPrincipal() p: iam.Principal, @Param('id') id: string) {
+    return tenantTx(this.db, p.tenantId, (tx) => this.ordersService.deliver(tx, p, id));
+  }
+
+  @RequirePermission('order.update')
+  @Post(':id/complete')
+  complete(@CurrentPrincipal() p: iam.Principal, @Param('id') id: string) {
+    return tenantTx(this.db, p.tenantId, (tx) => this.ordersService.complete(tx, p, id));
+  }
+
   @RequirePermission('order.cancel')
   @Post(':id/cancel')
   cancel(@CurrentPrincipal() p: iam.Principal, @Param('id') id: string, @Body() body: unknown) {
