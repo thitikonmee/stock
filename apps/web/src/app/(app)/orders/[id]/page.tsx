@@ -18,7 +18,14 @@ import {
   formatDate,
 } from '@/components/ui';
 import { api } from '@/lib/client/api';
-import type { Order, OrderFulfillment, OrderReturn, OrderStatus, ReturnCondition } from '@/lib/client/types';
+import type {
+  Order,
+  OrderFulfillment,
+  OrderReturn,
+  OrderStatus,
+  ReturnCondition,
+  ReturnStatus,
+} from '@/lib/client/types';
 import { can } from '@/lib/client/types';
 import { useResource } from '@/lib/client/use-resource';
 
@@ -37,6 +44,62 @@ const STATUS_LABEL: Record<OrderStatus, string> = {
   REFUNDED: 'คืนเงินแล้ว',
   PARTIALLY_REFUNDED: 'คืนเงินบางส่วน',
   ON_HOLD: 'พักไว้',
+};
+const FULFILLMENT_LABEL: Record<OrderFulfillment['status'], string> = {
+  PENDING: 'รอดำเนินการ',
+  PICKING: 'กำลังหยิบสินค้า',
+  PACKED: 'แพ็กแล้ว',
+  SHIPPED: 'จัดส่งแล้ว',
+  DELIVERED: 'ถึงลูกค้าแล้ว',
+  CANCELLED: 'ยกเลิก',
+  RETURNED: 'ตีคืน',
+};
+const FULFILLMENT_TONE: Record<OrderFulfillment['status'], 'slate' | 'amber' | 'green' | 'red' | 'teal'> = {
+  PENDING: 'slate',
+  PICKING: 'amber',
+  PACKED: 'teal',
+  SHIPPED: 'green',
+  DELIVERED: 'green',
+  CANCELLED: 'slate',
+  RETURNED: 'red',
+};
+const RETURN_LABEL: Record<ReturnStatus, string> = {
+  REQUESTED: 'ขอคืนแล้ว',
+  APPROVED: 'อนุมัติแล้ว',
+  REJECTED: 'ปฏิเสธ',
+  IN_TRANSIT: 'กำลังส่งคืน',
+  RECEIVED: 'รับของแล้ว',
+  INSPECTED: 'ตรวจสอบแล้ว',
+  COMPLETED: 'เสร็จสมบูรณ์',
+  CANCELLED: 'ยกเลิก',
+};
+const RETURN_TONE: Record<ReturnStatus, 'slate' | 'amber' | 'green' | 'red' | 'teal'> = {
+  REQUESTED: 'amber',
+  APPROVED: 'teal',
+  REJECTED: 'red',
+  IN_TRANSIT: 'teal',
+  RECEIVED: 'teal',
+  INSPECTED: 'teal',
+  COMPLETED: 'green',
+  CANCELLED: 'slate',
+};
+// Same mapping as /orders — kept as its own copy since ui.tsx-level shared constants aren't a thing
+// yet in this codebase; consolidating is a code-organization change outside this pass's scope.
+const STATUS_TONE: Record<OrderStatus, 'slate' | 'amber' | 'green' | 'red' | 'teal'> = {
+  DRAFT: 'slate',
+  PENDING: 'amber',
+  PAID: 'teal',
+  CONFIRMED: 'teal',
+  PROCESSING: 'teal',
+  PACKED: 'teal',
+  SHIPPED: 'green',
+  DELIVERED: 'green',
+  COMPLETED: 'green',
+  CANCELLED: 'slate',
+  RETURNED: 'red',
+  REFUNDED: 'red',
+  PARTIALLY_REFUNDED: 'amber',
+  ON_HOLD: 'amber',
 };
 
 export default function OrderDetailPage() {
@@ -104,6 +167,7 @@ export default function OrderDetailPage() {
   return (
     <>
       <PageHeader
+        breadcrumb={[{ label: 'ออเดอร์', href: '/orders' }, { label: o.orderNo }]}
         title={`ออเดอร์ ${o.orderNo}`}
         description={`${o.channelCode} · วางเมื่อ ${formatDate(o.placedAt)}`}
         actions={
@@ -159,7 +223,7 @@ export default function OrderDetailPage() {
       <ErrorBox error={error} />
 
       <div className="mb-6 flex flex-wrap items-center gap-3">
-        <Badge tone="teal">{STATUS_LABEL[o.status]}</Badge>
+        <Badge tone={STATUS_TONE[o.status]}>{STATUS_LABEL[o.status]}</Badge>
         <span className="text-sm text-slate-500">การชำระเงิน: {o.paymentStatus}</span>
         <span className="text-sm text-slate-500">การจัดส่ง: {o.fulfillmentStatus}</span>
         {o.holdReason ? <span className="text-sm text-amber-700">เหตุผลพัก: {o.holdReason}</span> : null}
@@ -218,7 +282,7 @@ export default function OrderDetailPage() {
           {fulfillments.data?.map((f) => (
             <tr key={f.id}>
               <Td>
-                <Badge tone={f.status === 'SHIPPED' ? 'green' : 'amber'}>{f.status}</Badge>
+                <Badge tone={FULFILLMENT_TONE[f.status]}>{FULFILLMENT_LABEL[f.status]}</Badge>
               </Td>
               <Td>{f.carrier ?? '—'}</Td>
               <Td className="font-mono">{f.trackingNo ?? '—'}</Td>
@@ -297,7 +361,9 @@ function ReturnsPanel({
       <Table head={['สถานะ', 'เหตุผล', '']}>
         {returns.map((r) => (
           <tr key={r.id}>
-            <Td>{r.status}</Td>
+            <Td>
+              <Badge tone={RETURN_TONE[r.status]}>{RETURN_LABEL[r.status]}</Badge>
+            </Td>
             <Td>{r.reason ?? '—'}</Td>
             <Td className="text-right">
               {r.status === 'REQUESTED' ? (
