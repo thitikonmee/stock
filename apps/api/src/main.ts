@@ -23,6 +23,9 @@ async function bootstrap() {
   if (env.SHOPEE_FIXTURE_MODE && ['staging', 'prod'].includes(env.APP_ENV)) {
     throw new Error('SHOPEE_FIXTURE_MODE must never be set in staging/prod');
   }
+  if (env.LAZADA_FIXTURE_MODE && ['staging', 'prod'].includes(env.APP_ENV)) {
+    throw new Error('LAZADA_FIXTURE_MODE must never be set in staging/prod');
+  }
   const mailer: notifications.EmailSender = env.SMTP_HOST
     ? new notifications.SmtpEmailSender({
         host: env.SMTP_HOST,
@@ -52,6 +55,17 @@ async function bootstrap() {
             partnerKey: env.SHOPEE_PARTNER_KEY,
             baseUrl: env.SHOPEE_API_BASE_URL,
             ...(env.SHOPEE_FIXTURE_MODE ? { fetcher: demoShopeeFixture(logger).fetcher() } : {}),
+          },
+        }
+      : {}),
+    ...(env.LAZADA_APP_KEY && env.LAZADA_APP_SECRET
+      ? {
+          lazada: {
+            appKey: env.LAZADA_APP_KEY,
+            appSecret: env.LAZADA_APP_SECRET,
+            apiBaseUrl: env.LAZADA_API_BASE_URL,
+            authBaseUrl: env.LAZADA_AUTH_BASE_URL,
+            ...(env.LAZADA_FIXTURE_MODE ? { fetcher: demoLazadaFixture(logger).fetcher() } : {}),
           },
         }
       : {}),
@@ -116,6 +130,51 @@ function demoShopeeFixture(logger: ReturnType<typeof createLogger>): channels.Sh
       { itemId: 100001, modelId: 1, sku: 'DEMO-SKU-1', name: 'เสื้อยืดตัวอย่าง M', quantity: 2, price: 199 },
     ],
     total: 398,
+  });
+  return fixture;
+}
+
+/** Dev/demo only (`LAZADA_FIXTURE_MODE=true`) — a product with two SKUs and a two-line order
+ *  (one line already shipped, one already cancelled) so the item-level status/partial-cancel path
+ *  has something to show without real Lazada credentials. */
+function demoLazadaFixture(logger: ReturnType<typeof createLogger>): channels.LazadaFixtureServer {
+  logger.info(
+    { event: 'lazada.fixture_mode' },
+    'LAZADA_FIXTURE_MODE on: LazadaAdapter talks to an in-memory fixture, not real Lazada',
+  );
+  const fixture = new channels.LazadaFixtureServer();
+  fixture.addProduct({
+    itemId: 200001,
+    name: 'กระเป๋าตัวอย่าง',
+    status: 'active',
+    skus: [
+      { skuId: 1, sellerSku: 'DEMO-BAG-1', price: 590, stock: 20 },
+      { skuId: 2, sellerSku: 'DEMO-BAG-2', price: 590, stock: 6 },
+    ],
+  });
+  fixture.addOrder({
+    orderId: 700001,
+    createdAt: new Date(Date.now() - 3600_000).toISOString(),
+    updatedAt: new Date().toISOString(),
+    total: 1180,
+    items: [
+      {
+        orderItemId: 1,
+        productId: 200001,
+        sku: 'DEMO-BAG-1',
+        name: 'กระเป๋าตัวอย่าง แดง',
+        status: 'pending',
+        price: 590,
+      },
+      {
+        orderItemId: 2,
+        productId: 200001,
+        sku: 'DEMO-BAG-2',
+        name: 'กระเป๋าตัวอย่าง ฟ้า',
+        status: 'pending',
+        price: 590,
+      },
+    ],
   });
   return fixture;
 }

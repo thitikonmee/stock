@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { sql } from 'kysely';
 import type { Tx } from '@stockos/database';
-import { uuidv7 } from '@stockos/shared';
+import { Dec, formatQuantity, uuidv7 } from '@stockos/shared';
 import { systemPrincipal, type Principal } from '../../iam/public-api';
 import { recordAudit } from '../../audit/public-api';
 import type { ReservationService } from '../../inventory/public-api';
@@ -14,7 +14,11 @@ import {
   type OrderStatus,
 } from '../../orders/public-api';
 import type { NotificationService } from '../../notifications/public-api';
-import type { NormalizedChannelOrder, NormalizedOrderStatus } from '../domain/channel-adapter';
+import type {
+  NormalizedChannelOrder,
+  NormalizedOrderLine,
+  NormalizedOrderStatus,
+} from '../domain/channel-adapter';
 import type { ChannelAccount } from '../domain/types';
 import { deterministicUuid } from './deterministic-id';
 
@@ -128,9 +132,91 @@ export class OrderIngestService {
       return { outcome: 'NO_CHANGE', detail: 'cancelled before an order was ever created' };
     }
 
+    await this.processLineCancellations(tx, principal, orderId, normalized.lines, source);
     const result = await this.advance(tx, principal, orderId, normalized.normalizedStatus, account, source);
     await this.markProcessed(tx, tenantId, account.id, normalized.externalOrderId, orderId);
     return created ? { outcome: 'CREATED', orderId } : { outcome: result, orderId };
+  }
+
+  // ---------------------------------------------------------------- per-line cancel (Lazada/TikTok)
+
+  /**
+   * A platform whose status lives per order item (Lazada — docs §18) can cancel one line of a
+   * multi-line order while the rest ships; the order itself never changes status for this (see
+   * `deriveOrderStatus`'s doc comment). Only that line's own reservation is released/uncommitted —
+   * every other line, and the order row itself, is untouched. Idempotent by construction: re-running
+   * this against an already-cancelled line is a no-op (`cancelledQty` check below), so no separate
+   * idempotency-key bookkeeping is needed for docs' `order:{id}:line:{lineId}:cancel` example.
+   */
+  private async processLineCancellations(
+    tx: Tx,
+    principal: Principal,
+    orderId: string,
+    lines: readonly NormalizedOrderLine[],
+    source: 'CHANNEL_WEBHOOK' | 'CHANNEL_POLL',
+  ): Promise<void> {
+    const cancelled = lines.filter((l) => l.lineStatus === 'CANCELLED');
+    if (cancelled.length === 0) return;
+    for (const line of cancelled) {
+      const item = await this.findOrderItem(tx, orderId, line.externalItemId, line.externalVariantId);
+      if (!item) continue; // not this order's line (shouldn't happen) — nothing to cancel
+      const remaining = new Dec(item.quantity).minus(item.cancelledQty).minus(item.fulfilledQty);
+      if (remaining.lessThanOrEqualTo(0)) continue; // already fully cancelled/fulfilled — idempotent no-op
+
+      const orderReservations = await this.reservations.list(tx, principal, {
+        referenceType: 'ORDER',
+        referenceId: orderId,
+      });
+      const reservation = orderReservations.find((r) => r.variantId === item.variantId);
+      if (reservation?.status === 'RESERVED') await this.reservations.release(tx, principal, reservation.id);
+      else if (reservation?.status === 'COMMITTED')
+        await this.reservations.uncommit(tx, principal, reservation.id);
+      // FULFILLED/PARTIALLY_FULFILLED/RELEASED/EXPIRED: line already shipped or already released —
+      // nothing left to release; still record the cancellation below so `cancelled_qty` reflects it.
+
+      await sql`update order_items set cancelled_qty = cancelled_qty + ${formatQuantity(remaining)}::numeric
+                where id = ${item.id}`.execute(tx);
+      await recordAudit(tx, {
+        tenantId: principal.tenantId,
+        action: 'channel.order.line_cancel',
+        resourceType: 'order_item',
+        resourceId: item.id,
+        after: { orderId, externalLineId: line.externalLineId, source, quantity: formatQuantity(remaining) },
+      });
+    }
+  }
+
+  private async findOrderItem(
+    tx: Tx,
+    orderId: string,
+    externalItemId: string,
+    externalVariantId: string,
+  ): Promise<{
+    id: string;
+    variantId: string;
+    quantity: string;
+    cancelledQty: string;
+    fulfilledQty: string;
+  } | null> {
+    const { rows } = await sql<{
+      id: string;
+      variant_id: string;
+      quantity: string;
+      cancelled_qty: string;
+      fulfilled_qty: string;
+    }>`select id, variant_id, quantity, cancelled_qty, fulfilled_qty from order_items
+        where order_id = ${orderId} and channel_item_ref->>'item_id' = ${externalItemId}
+          and channel_item_ref->>'model_id' = ${externalVariantId}`.execute(tx);
+    const row = rows[0];
+    return row
+      ? {
+          id: row.id,
+          variantId: row.variant_id,
+          quantity: row.quantity,
+          cancelledQty: row.cancelled_qty,
+          fulfilledQty: row.fulfilled_qty,
+        }
+      : null;
   }
 
   // ---------------------------------------------------------------- state progression
@@ -212,15 +298,24 @@ export class OrderIngestService {
     tx: Tx,
     principal: Principal,
     orderId: string,
-    order: { warehouseId: string; lines: readonly { id: string; quantity: string }[] },
+    order: { warehouseId: string; lines: readonly { id: string; quantity: string; cancelledQty: string }[] },
     account: ChannelAccount,
   ) {
     const existing = await this.fulfillmentService.list(tx, principal, orderId);
     if (existing[0]) return existing[0];
+    // A line a Lazada-style adapter already cancelled (see processLineCancellations) must be left
+    // out here — its full quantity is no longer fulfillable, and FulfillmentService.create() would
+    // reject the whole call with OVER_FULFILL if asked for more than `quantity - cancelledQty`.
+    const lines = order.lines
+      .map((l) => ({
+        orderItemId: l.id,
+        quantity: formatQuantity(new Dec(l.quantity).minus(l.cancelledQty)),
+      }))
+      .filter((l) => new Dec(l.quantity).greaterThan(0));
     return this.fulfillmentService.create(tx, principal, orderId, {
       idempotencyKey: deterministicUuid(`fulfillment:${orderId}`),
       warehouseId: account.defaultWarehouseId ?? order.warehouseId,
-      lines: order.lines.map((l) => ({ orderItemId: l.id, quantity: l.quantity })),
+      lines,
     });
   }
 

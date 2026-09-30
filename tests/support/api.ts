@@ -25,6 +25,7 @@ export async function createTestApi(
     rateLimits?: Partial<RateLimits>;
     mailer?: notifications.EmailSender;
     shopee?: channels.ShopeeConfig;
+    lazada?: channels.LazadaConfig;
   } = {},
 ): Promise<Api> {
   return createApp({
@@ -35,6 +36,7 @@ export async function createTestApi(
     rateLimits: { ...NO_RATE_LIMITS, ...appOverrides.rateLimits },
     ...(appOverrides.mailer ? { mailer: appOverrides.mailer } : {}),
     ...(appOverrides.shopee ? { shopee: appOverrides.shopee } : {}),
+    ...(appOverrides.lazada ? { lazada: appOverrides.lazada } : {}),
     webBaseUrl: 'https://app.stockos.test',
     apiBaseUrl: 'https://api.stockos.test',
     // Product images: a throwaway temp dir per test file, never the repo's own .uploads/.
