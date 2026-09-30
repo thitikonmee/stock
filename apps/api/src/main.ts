@@ -26,6 +26,9 @@ async function bootstrap() {
   if (env.LAZADA_FIXTURE_MODE && ['staging', 'prod'].includes(env.APP_ENV)) {
     throw new Error('LAZADA_FIXTURE_MODE must never be set in staging/prod');
   }
+  if (env.TIKTOK_FIXTURE_MODE && ['staging', 'prod'].includes(env.APP_ENV)) {
+    throw new Error('TIKTOK_FIXTURE_MODE must never be set in staging/prod');
+  }
   const mailer: notifications.EmailSender = env.SMTP_HOST
     ? new notifications.SmtpEmailSender({
         host: env.SMTP_HOST,
@@ -66,6 +69,17 @@ async function bootstrap() {
             apiBaseUrl: env.LAZADA_API_BASE_URL,
             authBaseUrl: env.LAZADA_AUTH_BASE_URL,
             ...(env.LAZADA_FIXTURE_MODE ? { fetcher: demoLazadaFixture(logger).fetcher() } : {}),
+          },
+        }
+      : {}),
+    ...(env.TIKTOK_APP_KEY && env.TIKTOK_APP_SECRET
+      ? {
+          tiktok: {
+            appKey: env.TIKTOK_APP_KEY,
+            appSecret: env.TIKTOK_APP_SECRET,
+            apiBaseUrl: env.TIKTOK_API_BASE_URL,
+            authBaseUrl: env.TIKTOK_AUTH_BASE_URL,
+            ...(env.TIKTOK_FIXTURE_MODE ? { fetcher: demoTikTokFixture(logger).fetcher() } : {}),
           },
         }
       : {}),
@@ -174,6 +188,38 @@ function demoLazadaFixture(logger: ReturnType<typeof createLogger>): channels.La
         status: 'pending',
         price: 590,
       },
+    ],
+  });
+  return fixture;
+}
+
+/** Dev/demo only (`TIKTOK_FIXTURE_MODE=true`) — a product with two SKUs and one confirmed order so
+ *  the connect (incl. the shop_cipher round trip) → map → sync → reconcile flow has something to
+ *  show without real TikTok Partner Center credentials. */
+function demoTikTokFixture(logger: ReturnType<typeof createLogger>): channels.TikTokFixtureServer {
+  logger.info(
+    { event: 'tiktok.fixture_mode' },
+    'TIKTOK_FIXTURE_MODE on: TikTokAdapter talks to an in-memory fixture, not real TikTok Shop',
+  );
+  const fixture = new channels.TikTokFixtureServer();
+  fixture.addProduct({
+    id: '300001',
+    title: 'หมวกตัวอย่าง',
+    status: 'ACTIVATE',
+    skus: [
+      { id: '1', sellerSku: 'DEMO-CAP-1', price: 259, stock: 18 },
+      { id: '2', sellerSku: 'DEMO-CAP-2', price: 259, stock: 4 },
+    ],
+  });
+  const now = Math.floor(Date.now() / 1000);
+  fixture.addOrder({
+    id: '800001',
+    status: 'AWAITING_SHIPMENT',
+    createTime: now - 900,
+    updateTime: now,
+    total: 259,
+    items: [
+      { id: '1', productId: '300001', skuId: '1', sellerSku: 'DEMO-CAP-1', name: 'หมวกตัวอย่าง', price: 259 },
     ],
   });
   return fixture;

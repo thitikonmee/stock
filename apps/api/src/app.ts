@@ -82,6 +82,8 @@ export interface AppDeps {
   shopee?: channels.ShopeeConfig;
   /** Lazada Open Platform app credentials; omit to leave the LAZADA adapter unregistered. */
   lazada?: channels.LazadaConfig;
+  /** TikTok Shop Partner Center app credentials; omit to leave the TIKTOK adapter unregistered. */
+  tiktok?: channels.TikTokConfig;
   corsOrigins?: string[];
   /** Defaults to `select 1` against `db`. */
   readinessCheck?: ReadinessCheck;
@@ -312,6 +314,7 @@ export async function createApp(deps: AppDeps): Promise<NestFastifyApplication> 
   const channelRegistry = new channels.AdapterRegistry();
   if (deps.shopee) channelRegistry.register(new channels.ShopeeAdapter(deps.shopee));
   if (deps.lazada) channelRegistry.register(new channels.LazadaAdapter(deps.lazada));
+  if (deps.tiktok) channelRegistry.register(new channels.TikTokAdapter(deps.tiktok));
   const channelVault = new channels.CredentialVault(deps.auth.secretBox);
   const channelTokens = new channels.TokenManager(channelRegistry, channelVault);
   const channelPolicies = new channels.StockPolicyService();
