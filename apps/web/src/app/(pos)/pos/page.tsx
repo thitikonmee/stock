@@ -171,7 +171,12 @@ function Centered({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen items-center justify-center px-4 py-10">
       <div className="w-full max-w-sm space-y-4">
-        <div className="text-center text-2xl font-bold text-brand-700">StockOS POS</div>
+        <div className="flex items-center justify-center gap-2 text-2xl font-bold text-slate-900">
+          <span className="flex size-8 items-center justify-center rounded-lg bg-brand-600 text-base text-white">
+            S
+          </span>
+          StockOS POS
+        </div>
         {children}
       </div>
     </div>
@@ -460,7 +465,7 @@ function TillView({
 
   return (
     <div className="mx-auto flex h-screen max-w-6xl flex-col gap-4 p-4">
-      <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-2">
+      <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-2">
         <div className="text-sm">
           <span className="font-semibold">{me.displayName}</span>
           <span className="text-slate-400"> · เครื่อง {device.deviceId.slice(-8)}</span>

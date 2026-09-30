@@ -5,19 +5,38 @@ import { UsageBars } from '@/components/usage-bars';
 import type { PlanSummary } from '@/lib/client/types';
 import { useResource } from '@/lib/client/use-resource';
 
+// billing.PlanService returns `status` as a plain string (TRIALING/ACTIVE/PAST_DUE from
+// tenant_subscriptions, or 'NONE' when a tenant has no subscription row at all) — not a literal
+// union, so this stays a lookup with a raw-string fallback rather than an exhaustive Record.
+const STATUS_LABEL: Record<string, string> = {
+  TRIALING: 'ช่วงทดลองใช้',
+  ACTIVE: 'ใช้งานอยู่',
+  PAST_DUE: 'ค้างชำระ',
+  NONE: 'ไม่มีแพ็กเกจ',
+};
+const STATUS_TONE: Record<string, 'slate' | 'amber' | 'green' | 'red' | 'teal'> = {
+  TRIALING: 'amber',
+  ACTIVE: 'green',
+  PAST_DUE: 'red',
+  NONE: 'slate',
+};
+
 export default function BillingPage() {
   const { data: plan, error, loading } = useResource<PlanSummary>('/billing/usage');
   return (
     <>
-      <PageHeader title="แพ็กเกจและการใช้งาน" />
+      <PageHeader
+        breadcrumb={[{ label: 'การตั้งค่า', href: '/settings/branches' }, { label: 'แพ็กเกจ' }]}
+        title="แพ็กเกจและการใช้งาน"
+      />
       <ErrorBox error={error} />
       {loading && !plan ? <Loading /> : null}
       {plan ? (
         <Card
           title={plan.planName}
           actions={
-            <Badge tone={plan.status === 'TRIALING' ? 'amber' : 'green'}>
-              {plan.status === 'TRIALING' ? 'ช่วงทดลองใช้' : plan.status}
+            <Badge tone={STATUS_TONE[plan.status] ?? 'slate'}>
+              {STATUS_LABEL[plan.status] ?? plan.status}
             </Badge>
           }
         >

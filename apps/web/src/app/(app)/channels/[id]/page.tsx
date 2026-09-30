@@ -64,6 +64,61 @@ const MAPPING_TONE: Record<MappingStatus, 'slate' | 'amber' | 'green' | 'red' | 
   CONFLICT: 'red',
   BROKEN: 'red',
 };
+const JOB_TYPE_LABEL: Record<SyncJobRow['jobType'], string> = {
+  ORDER_PULL: 'ดึงออเดอร์',
+  ORDER_DETAIL: 'รายละเอียดออเดอร์',
+  PRODUCT_IMPORT: 'นำเข้าสินค้า',
+  STOCK_PUSH: 'ส่งสต็อก',
+  PRICE_PUSH: 'ส่งราคา',
+  STATUS_PUSH: 'ส่งสถานะ',
+  RECONCILE: 'ตรวจสอบสต็อก',
+  TOKEN_REFRESH: 'ต่ออายุโทเคน',
+};
+const JOB_STATUS_LABEL: Record<SyncJobRow['status'], string> = {
+  QUEUED: 'รอคิว',
+  RUNNING: 'กำลังทำงาน',
+  SUCCEEDED: 'สำเร็จ',
+  FAILED: 'ล้มเหลว',
+  DEAD: 'หยุดถาวร',
+  CANCELLED: 'ยกเลิก',
+};
+const JOB_STATUS_TONE: Record<SyncJobRow['status'], 'slate' | 'amber' | 'green' | 'red' | 'teal'> = {
+  QUEUED: 'slate',
+  RUNNING: 'amber',
+  SUCCEEDED: 'green',
+  FAILED: 'red',
+  DEAD: 'red',
+  CANCELLED: 'slate',
+};
+const WEBHOOK_STATUS_LABEL: Record<WebhookEventRow['status'], string> = {
+  RECEIVED: 'รับแล้ว',
+  PROCESSING: 'กำลังประมวลผล',
+  PROCESSED: 'ประมวลผลแล้ว',
+  IGNORED: 'ข้าม',
+  FAILED: 'ล้มเหลว',
+  DEAD: 'หยุดถาวร',
+};
+const WEBHOOK_STATUS_TONE: Record<WebhookEventRow['status'], 'slate' | 'amber' | 'green' | 'red' | 'teal'> = {
+  RECEIVED: 'slate',
+  PROCESSING: 'amber',
+  PROCESSED: 'green',
+  IGNORED: 'slate',
+  FAILED: 'red',
+  DEAD: 'red',
+};
+const RECON_STATUS_LABEL: Record<ReconciliationRunRow['status'], string> = {
+  RUNNING: 'กำลังตรวจสอบ',
+  COMPLETED: 'เสร็จสิ้น',
+  FAILED: 'ล้มเหลว',
+};
+const RECON_STATUS_TONE: Record<
+  ReconciliationRunRow['status'],
+  'slate' | 'amber' | 'green' | 'red' | 'teal'
+> = {
+  RUNNING: 'amber',
+  COMPLETED: 'green',
+  FAILED: 'red',
+};
 
 export default function ChannelAccountDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -122,6 +177,10 @@ export default function ChannelAccountDetailPage() {
   return (
     <>
       <PageHeader
+        breadcrumb={[
+          { label: 'ช่องทางขาย', href: '/channels' },
+          { label: acc.shopName ?? acc.externalShopId },
+        ]}
         title={acc.shopName ?? acc.externalShopId}
         description={`${acc.channelCode} · ${acc.externalShopId}`}
         actions={
@@ -248,11 +307,9 @@ export default function ChannelAccountDetailPage() {
         >
           {(syncJobs.data ?? []).map((j) => (
             <tr key={j.id}>
-              <Td>{j.jobType}</Td>
+              <Td>{JOB_TYPE_LABEL[j.jobType]}</Td>
               <Td>
-                <Badge tone={j.status === 'SUCCEEDED' ? 'green' : j.status === 'FAILED' ? 'red' : 'amber'}>
-                  {j.status}
-                </Badge>
+                <Badge tone={JOB_STATUS_TONE[j.status]}>{JOB_STATUS_LABEL[j.status]}</Badge>
               </Td>
               <Td className="text-xs text-slate-600">
                 {j.output ? JSON.stringify(j.output) : (j.lastError ?? '—')}
@@ -279,7 +336,9 @@ export default function ChannelAccountDetailPage() {
                   {w.signatureValid ? 'ถูกต้อง' : 'ไม่ถูกต้อง'}
                 </Badge>
               </Td>
-              <Td>{w.status}</Td>
+              <Td>
+                <Badge tone={WEBHOOK_STATUS_TONE[w.status]}>{WEBHOOK_STATUS_LABEL[w.status]}</Badge>
+              </Td>
               <Td className="whitespace-nowrap text-slate-600">{formatDate(w.receivedAt)}</Td>
             </tr>
           ))}
@@ -501,9 +560,7 @@ function ReconciliationPanel({ runs, loading }: { runs: ReconciliationRunRow[]; 
         {runs.map((r) => (
           <tr key={r.id}>
             <Td>
-              <Badge tone={r.status === 'COMPLETED' ? 'green' : r.status === 'FAILED' ? 'red' : 'amber'}>
-                {r.status}
-              </Badge>
+              <Badge tone={RECON_STATUS_TONE[r.status]}>{RECON_STATUS_LABEL[r.status]}</Badge>
             </Td>
             <Td>{r.checkedCount}</Td>
             <Td>{r.mismatchCount}</Td>

@@ -79,7 +79,10 @@ export default function BranchesPage() {
 
   return (
     <>
-      <PageHeader title="สาขาและคลังสินค้า" />
+      <PageHeader
+        breadcrumb={[{ label: 'การตั้งค่า', href: '/settings/branches' }, { label: 'สาขาและคลัง' }]}
+        title="สาขาและคลังสินค้า"
+      />
       <div className="space-y-6">
         <Card
           title="สาขา"

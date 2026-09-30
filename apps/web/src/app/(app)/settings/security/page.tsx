@@ -49,6 +49,7 @@ export default function SecurityPage() {
   return (
     <>
       <PageHeader
+        breadcrumb={[{ label: 'การตั้งค่า', href: '/settings/branches' }, { label: 'ความปลอดภัย' }]}
         title="ความปลอดภัย"
         description="การยืนยันตัวตน 2 ขั้นตอนช่วยป้องกันบัญชีแม้รหัสผ่านรั่วไหล"
       />

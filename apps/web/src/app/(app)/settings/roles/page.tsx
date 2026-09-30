@@ -83,6 +83,7 @@ export default function RolesPage() {
   return (
     <>
       <PageHeader
+        breadcrumb={[{ label: 'การตั้งค่า', href: '/settings/branches' }, { label: 'บทบาทและสิทธิ์' }]}
         title="บทบาทและสิทธิ์"
         description="บทบาทของระบบแก้ไขไม่ได้ แต่สร้างสำเนาเป็นบทบาทใหม่ได้ · ให้สิทธิ์ได้เฉพาะที่คุณมีอยู่"
         actions={manage ? <Button onClick={() => open('new')}>สร้างบทบาท</Button> : null}
