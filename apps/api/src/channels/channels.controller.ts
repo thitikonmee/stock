@@ -8,7 +8,7 @@ import { CurrentPrincipal, Public, RequirePermission } from '../auth/decorators'
 import { parse } from '../common/validation';
 import { API_BASE_URL, DB, WEB_BASE_URL } from '../tokens';
 
-const SUPPORTED_CHANNELS = ['SHOPEE', 'LAZADA'] as const;
+const SUPPORTED_CHANNELS = ['SHOPEE', 'LAZADA', 'TIKTOK'] as const;
 function assertSupportedChannel(code: string): channels.ChannelCode {
   if (!SUPPORTED_CHANNELS.includes(code as (typeof SUPPORTED_CHANNELS)[number])) {
     throw new ValidationError(`Unsupported channel: ${code}`);

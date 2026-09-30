@@ -70,6 +70,12 @@ export const EnvSchema = z.object({
   LAZADA_AUTH_BASE_URL: z.string().url().default('https://auth.lazada.com/rest'),
   /** Dev/demo only, same caveat as SHOPEE_FIXTURE_MODE. */
   LAZADA_FIXTURE_MODE: z.coerce.boolean().default(false),
+  TIKTOK_APP_KEY: z.string().optional(),
+  TIKTOK_APP_SECRET: z.string().optional(),
+  TIKTOK_API_BASE_URL: z.string().url().default('https://open-api.tiktokglobalshop.com'),
+  TIKTOK_AUTH_BASE_URL: z.string().url().default('https://auth.tiktok-shops.com'),
+  /** Dev/demo only, same caveat as SHOPEE_FIXTURE_MODE. */
+  TIKTOK_FIXTURE_MODE: z.coerce.boolean().default(false),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().positive().default(1025),
   SMTP_USER: z.string().optional(),

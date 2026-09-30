@@ -71,3 +71,11 @@ export {
   mapLazadaLineStatus,
   deriveOrderStatus as deriveLazadaOrderStatus,
 } from './adapters/lazada/status-map';
+
+export { TikTokAdapter, type TikTokConfig } from './adapters/tiktok/tiktok-adapter';
+export { TikTokFixtureServer } from './adapters/tiktok/fixtures/fixture-fetcher';
+export {
+  buildSign as buildTikTokSign,
+  verifyWebhookSignature as verifyTikTokWebhookSignature,
+} from './adapters/tiktok/signing';
+export { mapTikTokOrderStatus } from './adapters/tiktok/status-map';

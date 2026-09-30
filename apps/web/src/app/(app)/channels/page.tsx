@@ -41,7 +41,7 @@ export default function ChannelsPage() {
   const { me } = useMe();
   const { data: accounts, error, loading } = useResource<ChannelAccount[]>('/channel-accounts');
   const [banner, setBanner] = useState<{ tone: 'success' | 'warning'; text: string } | null>(null);
-  const [connecting, setConnecting] = useState<'shopee' | 'lazada' | null>(null);
+  const [connecting, setConnecting] = useState<'shopee' | 'lazada' | 'tiktok' | null>(null);
   const [connectError, setConnectError] = useState<unknown>();
 
   useEffect(() => {
@@ -51,7 +51,7 @@ export default function ChannelsPage() {
     if (q.get('connected') || q.get('error')) window.history.replaceState({}, '', '/channels');
   }, []);
 
-  async function connect(channelCode: 'shopee' | 'lazada') {
+  async function connect(channelCode: 'shopee' | 'lazada' | 'tiktok') {
     setConnecting(channelCode);
     setConnectError(undefined);
     try {
@@ -77,6 +77,9 @@ export default function ChannelsPage() {
               </Button>
               <Button variant="secondary" onClick={() => connect('lazada')} busy={connecting === 'lazada'}>
                 เชื่อม Lazada
+              </Button>
+              <Button variant="secondary" onClick={() => connect('tiktok')} busy={connecting === 'tiktok'}>
+                เชื่อม TikTok
               </Button>
             </div>
           ) : undefined

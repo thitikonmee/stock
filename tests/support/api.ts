@@ -26,6 +26,7 @@ export async function createTestApi(
     mailer?: notifications.EmailSender;
     shopee?: channels.ShopeeConfig;
     lazada?: channels.LazadaConfig;
+    tiktok?: channels.TikTokConfig;
   } = {},
 ): Promise<Api> {
   return createApp({
@@ -37,6 +38,7 @@ export async function createTestApi(
     ...(appOverrides.mailer ? { mailer: appOverrides.mailer } : {}),
     ...(appOverrides.shopee ? { shopee: appOverrides.shopee } : {}),
     ...(appOverrides.lazada ? { lazada: appOverrides.lazada } : {}),
+    ...(appOverrides.tiktok ? { tiktok: appOverrides.tiktok } : {}),
     webBaseUrl: 'https://app.stockos.test',
     apiBaseUrl: 'https://api.stockos.test',
     // Product images: a throwaway temp dir per test file, never the repo's own .uploads/.
