@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, type FormEvent } from 'react';
+import { AlertTriangle } from 'lucide-react';
 import {
   Badge,
   Button,
@@ -58,6 +59,7 @@ export default function StockOverviewPage() {
   return (
     <>
       <PageHeader
+        breadcrumb={[{ label: 'คลังสินค้า', href: '/inventory/stock' }, { label: 'สต็อกสินค้า' }]}
         title="สต็อกสินค้า"
         description="ยอดคงเหลือแยกตามคลัง — คลิกแถวเพื่อดูการ์ดสต็อก (stock card)"
         actions={<Button onClick={() => setReceiveOpen(true)}>รับสต็อกเข้า</Button>}
@@ -95,7 +97,12 @@ export default function StockOverviewPage() {
                 <Td>{b.damaged}</Td>
                 <Td>
                   <span className="mr-2">{b.available}</span>
-                  {low ? <Badge tone="red">สต็อกต่ำ</Badge> : null}
+                  {low ? (
+                    <Badge tone="red">
+                      <AlertTriangle className="mr-1 inline size-3" aria-hidden />
+                      สต็อกต่ำ
+                    </Badge>
+                  ) : null}
                 </Td>
                 <Td className="text-right">
                   <Button

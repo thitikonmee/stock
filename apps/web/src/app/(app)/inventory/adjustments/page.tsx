@@ -72,6 +72,7 @@ export default function AdjustmentsPage() {
   return (
     <>
       <PageHeader
+        breadcrumb={[{ label: 'คลังสินค้า', href: '/inventory/stock' }, { label: 'ปรับสต็อก' }]}
         title="ปรับสต็อก"
         description="ทุกรายการปรับสต็อกต้องได้รับอนุมัติจากคนอื่น (ไม่ใช่ผู้ขอ) ก่อนจึงจะมีผล"
         actions={
@@ -97,14 +98,14 @@ export default function AdjustmentsPage() {
               <Td className="text-right">
                 {a.status === 'PENDING_APPROVAL' && can(me, 'inventory.adjust.approve') ? (
                   <div className="flex justify-end gap-2">
-                    <Button
-                      variant="secondary"
-                      busy={busyId === a.id}
-                      onClick={() => void act(a.id, 'reject')}
-                    >
+                    <Button variant="danger" busy={busyId === a.id} onClick={() => void act(a.id, 'reject')}>
                       ปฏิเสธ
                     </Button>
-                    <Button busy={busyId === a.id} onClick={() => void act(a.id, 'approve')}>
+                    <Button
+                      variant="success"
+                      busy={busyId === a.id}
+                      onClick={() => void act(a.id, 'approve')}
+                    >
                       อนุมัติ
                     </Button>
                   </div>
