@@ -2,16 +2,22 @@
 
 @theme {
   --font-sans: var(--font-thai), ui-sans-serif, system-ui, sans-serif;
-  --color-brand-50: #f0fdfa;
-  --color-brand-100: #ccfbf1;
-  --color-brand-600: #0d9488;
-  --color-brand-700: #0f766e;
-  --color-brand-800: #115e59;
+  /* Blue-teal accent (SHELF reference) — replaces the earlier green-leaning teal. */
+  --color-brand-50: #eef8fb;
+  --color-brand-100: #d7edf4;
+  --color-brand-200: #b0dbe9;
+  --color-brand-300: #7fc3d9;
+  --color-brand-400: #4aa8c4;
+  --color-brand-500: #2b93b3;
+  --color-brand-600: #1f8db0;
+  --color-brand-700: #187089;
+  --color-brand-800: #145a6e;
+  --color-brand-900: #123f4c;
 }
 
 html,
 body {
-  background: #f8fafc;
+  background: #eef0f2;
   color: #0f172a;
 }
 
