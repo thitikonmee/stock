@@ -68,6 +68,7 @@ export default function DevicesPage() {
   return (
     <>
       <PageHeader
+        breadcrumb={[{ label: 'การตั้งค่า', href: '/settings/branches' }, { label: 'เครื่อง POS' }]}
         title="เครื่อง POS"
         description="สร้างเครื่องแล้วนำรหัสลงทะเบียนไปใส่ในแอป POS ภายใน 15 นาที"
         actions={

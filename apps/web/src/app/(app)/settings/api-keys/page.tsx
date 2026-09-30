@@ -60,6 +60,7 @@ export default function ApiKeysPage() {
   return (
     <>
       <PageHeader
+        breadcrumb={[{ label: 'การตั้งค่า', href: '/settings/branches' }, { label: 'API keys' }]}
         title="API keys"
         description="ให้ระบบภายนอก (ERP, เว็บไซต์) เข้าถึงข้อมูลตามสิทธิ์ที่กำหนด — key ทำงานในนามผู้สร้าง"
         actions={

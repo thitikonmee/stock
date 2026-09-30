@@ -123,6 +123,7 @@ export default function UsersPage() {
   return (
     <>
       <PageHeader
+        breadcrumb={[{ label: 'การตั้งค่า', href: '/settings/branches' }, { label: 'ผู้ใช้งาน' }]}
         title="ผู้ใช้งาน"
         description="สมาชิกในบริษัท บทบาท และคำเชิญ"
         actions={

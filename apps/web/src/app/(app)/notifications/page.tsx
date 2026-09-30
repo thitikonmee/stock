@@ -6,6 +6,7 @@ import type { AppNotification } from '@/lib/client/types';
 import { useResource } from '@/lib/client/use-resource';
 
 const TONE = { INFO: 'teal', WARNING: 'amber', CRITICAL: 'red' } as const;
+const LABEL = { INFO: 'ทั่วไป', WARNING: 'คำเตือน', CRITICAL: 'สำคัญ' } as const;
 
 export default function NotificationsPage() {
   const list = useResource<AppNotification[]>('/notifications');
@@ -41,7 +42,7 @@ export default function NotificationsPage() {
             >
               <div>
                 <div className="flex items-center gap-2">
-                  <Badge tone={TONE[n.severity]}>{n.severity}</Badge>
+                  <Badge tone={TONE[n.severity]}>{LABEL[n.severity]}</Badge>
                   <span className="text-sm font-medium">{n.title}</span>
                 </div>
                 {n.body ? <p className="mt-1 text-sm text-slate-600">{n.body}</p> : null}
