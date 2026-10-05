@@ -21,6 +21,7 @@ import {
   type Principal,
 } from '../../iam/public-api';
 import type { JwtService } from '../infrastructure/jwt';
+import type { OAuthProvider, OAuthProviderCode } from '../oauth/provider';
 import type { PasswordHasher } from '../infrastructure/password';
 import type { SecretBox } from '../infrastructure/secret-box';
 import { base32Encode, generateTotpSecret, otpauthUri, verifyTotp } from '../infrastructure/totp';
@@ -28,6 +29,9 @@ import { issueSession, revokeFamily, type SessionTtls, type TokenPair } from './
 
 export interface AuthConfig extends SessionTtls {
   jwt: JwtService;
+  /** Registered login identity providers; a code with no entry means that "Continue with ..."
+   *  button simply isn't offered — same optional-registration convention as `channels.AdapterRegistry`. */
+  oauthProviders: Partial<Record<OAuthProviderCode, OAuthProvider>>;
   hasher: PasswordHasher;
   secretBox: SecretBox;
   mfaChallengeTtlSec: number;
@@ -61,10 +65,24 @@ export interface SignupInput {
 }
 
 export type LoginResult = ({ mfaRequired: false } & TokenPair) | { mfaRequired: true; mfaToken: string };
+export type OAuthSignInResult = LoginResult | { needsSignup: true; suggestedName: string; email: string };
 
 /** Tenant statuses that may use the product. PAST_DUE keeps working during the grace period. */
 const USABLE_TENANT_STATUSES = new Set(['TRIAL', 'ACTIVE', 'PAST_DUE']);
 const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$/;
+
+const OAUTH_CONNECT_STATE_AAD = 'oauth-connect-state';
+const OAUTH_TICKET_AAD = 'oauth-login-ticket';
+const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
+const OAUTH_TICKET_TTL_MS = 10 * 60 * 1000;
+
+interface OAuthTicketPayload {
+  provider: OAuthProviderCode;
+  providerId: string;
+  email: string;
+  name: string;
+  exp: number;
+}
 
 interface UserRow {
   id: string;
@@ -200,6 +218,231 @@ export class AuthService {
     }
     await this.resetFailures(user.id);
     return this.startSession(userId, String(claims['tid']), String(claims['mid']), ['pwd', 'otp']);
+  }
+
+  // ---------------------------------------------------------------- OAuth login / self-service signup
+
+  private getOAuthProvider(code: OAuthProviderCode): OAuthProvider {
+    const provider = this.config.oauthProviders[code];
+    if (!provider) throw new ValidationError(`${code} sign-in is not enabled`);
+    return provider;
+  }
+
+  /** Step 1: where to send the browser. `state` only carries a nonce + expiry — unlike the ticket
+   *  issued after callback, there is no identity to protect yet, so it just proves "this callback
+   *  request followed a `start` call we issued" within a short window (CSRF/replay guard). */
+  oauthAuthorizeUrl(code: OAuthProviderCode, redirectUri: string): string {
+    const provider = this.getOAuthProvider(code);
+    const state = this.config.secretBox
+      .seal(
+        Buffer.from(JSON.stringify({ nonce: uuidv7(), exp: Date.now() + OAUTH_STATE_TTL_MS })),
+        OAUTH_CONNECT_STATE_AAD,
+      )
+      .toString('base64url');
+    return provider.buildAuthorizeUrl(redirectUri, state);
+  }
+
+  /**
+   * Step 2: the provider's own redirect lands here (via the `@Public()` controller callback).
+   * Verifies `state` (proves this callback followed a `start` call we actually issued, within the
+   * window, rather than e.g. a stale bookmarked/replayed callback URL), exchanges `code` for a
+   * profile, and — this is the one place an unverified provider email gets rejected, before
+   * anything downstream ever trusts it — seals a short-lived ticket the web app round-trips
+   * through `oauthResolve`/`oauthSignup`. Never returns tokens or touches the database: no account
+   * decision happens until the ticket comes back.
+   */
+  async oauthCallback(
+    code: OAuthProviderCode,
+    authCode: string,
+    state: string,
+    redirectUri: string,
+  ): Promise<string> {
+    const provider = this.getOAuthProvider(code);
+    let statePayload: { exp: number };
+    try {
+      statePayload = JSON.parse(
+        this.config.secretBox.open(Buffer.from(state, 'base64url'), OAUTH_CONNECT_STATE_AAD).toString('utf8'),
+      ) as { exp: number };
+    } catch {
+      throw new UnauthenticatedError('OAUTH_FAILED', 'Sign-in request is invalid, please try again');
+    }
+    if (statePayload.exp < Date.now()) {
+      throw new UnauthenticatedError('OAUTH_FAILED', 'Sign-in request expired, please try again');
+    }
+    const profile = await provider.exchangeCode(authCode, redirectUri);
+    if (!profile.emailVerified) {
+      throw new UnauthenticatedError('OAUTH_FAILED', `${code} did not confirm this e-mail address`);
+    }
+    const payload: OAuthTicketPayload = {
+      provider: code,
+      providerId: profile.providerId,
+      email: normalizeEmail(profile.email),
+      name: profile.name,
+      exp: Date.now() + OAUTH_TICKET_TTL_MS,
+    };
+    return this.config.secretBox
+      .seal(Buffer.from(JSON.stringify(payload)), OAUTH_TICKET_AAD)
+      .toString('base64url');
+  }
+
+  /**
+   * Step 3: the web app calls this right after the callback redirect (ticket not yet tied to any
+   * account), and again after the user picks a tenant or an MFA code — same multi-step shape as
+   * `login()`. No existing user for the ticket's verified email -> `needsSignup` (an expected
+   * branch, not an error) instead of auto-creating a tenant with a guessed name.
+   */
+  async oauthResolve(ticket: string, tenantSlug?: string): Promise<OAuthSignInResult> {
+    const payload = this.openOAuthTicket(ticket);
+    const user = await this.findUser(payload.email);
+    if (!user) return { needsSignup: true, suggestedName: payload.name, email: payload.email };
+
+    await this.linkOAuthIdentity(user.id, payload);
+    const membership = await this.pickMembership(user.id, tenantSlug);
+    if (user.mfa_enabled) {
+      const mfaToken = this.config.jwt.sign(
+        { typ: 'mfa', sub: user.id, tid: membership.tenant_id, mid: membership.membership_id },
+        this.config.mfaChallengeTtlSec,
+      );
+      return { mfaRequired: true, mfaToken };
+    }
+    return {
+      mfaRequired: false,
+      ...(await this.startSession(user.id, membership.tenant_id, membership.membership_id, [
+        payload.provider.toLowerCase(),
+      ])),
+    };
+  }
+
+  /**
+   * Step 3b (only when `oauthResolve` returned `needsSignup`): re-opens the *same* ticket — the
+   * company name is the only thing trusted from the client here, every identity field is re-derived
+   * from the sealed ticket, never from anything the browser could have tampered with in between.
+   * Mirrors `signup()`'s tenant/user/membership/trial/roles/branch/warehouse/price-list bootstrap,
+   * minus the password hash, plus the `user_identities` link row.
+   */
+  async oauthSignup(
+    ticket: string,
+    companyName: string,
+  ): Promise<{ tenantId: string; userId: string } & TokenPair> {
+    const payload = this.openOAuthTicket(ticket);
+    const name = companyName.trim();
+    if (name.length < 2 || name.length > 120) {
+      throw new ValidationError('companyName must be 2-120 characters');
+    }
+    if (await this.findUser(payload.email)) {
+      throw new ConflictError('An account already exists for this e-mail — sign in instead');
+    }
+
+    const tenantId = uuidv7();
+    const userId = uuidv7();
+    const membershipId = uuidv7();
+    const slug = await this.pickAvailableSlug(name);
+
+    try {
+      return await tenantTx(this.db, tenantId, async (tx) => {
+        await sql`insert into tenants (id, slug, name, status) values (${tenantId}, ${slug}, ${name}, 'TRIAL')`.execute(
+          tx,
+        );
+        await sql`insert into users (id, email, display_name, email_verified_at)
+                  values (${userId}, ${payload.email}, ${payload.name || name}, now())`.execute(tx);
+        await sql`insert into user_identities (id, user_id, provider, provider_user_id, email)
+                  values (${uuidv7()}, ${userId}, ${payload.provider}, ${payload.providerId}, ${payload.email})`.execute(
+          tx,
+        );
+        await sql`insert into tenant_memberships (tenant_id, id, user_id, status, is_owner)
+                  values (${tenantId}, ${membershipId}, ${userId}, 'ACTIVE', true)`.execute(tx);
+        await new PlanService().startTrial(tx, tenantId);
+        const roles = await createSystemRoles(tx, tenantId);
+        await replaceAssignments(
+          tx,
+          tenantId,
+          membershipId,
+          [{ roleId: roles.get('OWNER')!, scopeType: 'TENANT', scopeId: null }],
+          null,
+        );
+
+        const branchId = uuidv7();
+        await sql`insert into branches (tenant_id, id, code, name, tax_branch_no) values (${tenantId}, ${branchId}, 'HQ', 'สำนักงานใหญ่', '00000')`.execute(
+          tx,
+        );
+        await sql`insert into warehouses (tenant_id, id, branch_id, code, name, type)
+                  values (${tenantId}, ${uuidv7()}, ${branchId}, 'MAIN', 'คลังหลัก', 'CENTRAL')`.execute(tx);
+        await new PriceService().ensureDefaultList(tx, tenantId);
+
+        await recordAudit(tx, {
+          tenantId,
+          action: 'tenant.signup',
+          resourceType: 'tenant',
+          resourceId: tenantId,
+          actor: { type: 'USER', id: userId },
+          after: { slug, companyName: name, ownerEmail: payload.email, provider: payload.provider },
+        });
+        const tokens = await issueSession(tx, this.config.jwt, this.config, {
+          userId,
+          tenantId,
+          membershipId,
+          amr: [payload.provider.toLowerCase()],
+          authTime: new Date(),
+        });
+        return { tenantId, userId, ...tokens };
+      });
+    } catch (err) {
+      if (pgErrorCode(err) === PgErrorCode.UniqueViolation) {
+        const constraint = (err as { constraint?: string }).constraint;
+        if (constraint === 'users_email_key') {
+          throw new ConflictError('An account already exists for this e-mail — sign in instead');
+        }
+        if (constraint === 'tenants_slug_key') {
+          // The retry loop in pickAvailableSlug already tries hard to dodge this; losing a race
+          // to another signup picking the exact same suffix in the same instant is rare enough
+          // that asking the user to just try again is reasonable rather than retrying forever here.
+          throw new ConflictError('That shop URL was just taken — please try again');
+        }
+      }
+      throw err;
+    }
+  }
+
+  private openOAuthTicket(ticket: string): OAuthTicketPayload {
+    let payload: OAuthTicketPayload;
+    try {
+      payload = JSON.parse(
+        this.config.secretBox.open(Buffer.from(ticket, 'base64url'), OAUTH_TICKET_AAD).toString('utf8'),
+      ) as OAuthTicketPayload;
+    } catch {
+      throw new UnauthenticatedError('OAUTH_FAILED', 'Sign-in link is invalid, please try again');
+    }
+    if (payload.exp < Date.now()) {
+      throw new UnauthenticatedError('OAUTH_FAILED', 'Sign-in link expired, please try again');
+    }
+    return payload;
+  }
+
+  private async linkOAuthIdentity(userId: string, payload: OAuthTicketPayload): Promise<void> {
+    await platformTx(this.db, (tx) =>
+      sql`insert into user_identities (id, user_id, provider, provider_user_id, email)
+          values (${uuidv7()}, ${userId}, ${payload.provider}, ${payload.providerId}, ${payload.email})
+          on conflict (provider, provider_user_id) do update set email = excluded.email`.execute(tx),
+    );
+    await platformTx(this.db, (tx) =>
+      sql`update users set email_verified_at = coalesce(email_verified_at, now()) where id = ${userId}`.execute(
+        tx,
+      ),
+    );
+  }
+
+  private async pickAvailableSlug(companyName: string): Promise<string> {
+    const base = slugify(companyName);
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const candidate = attempt === 0 ? base : `${base}-${uuidv7().slice(-4)}`;
+      const { rows } = await platformTx(this.db, (tx) =>
+        sql<{
+          exists: boolean;
+        }>`select exists(select 1 from tenants where slug = ${candidate}) as exists`.execute(tx),
+      );
+      if (!rows[0]!.exists) return candidate;
+    }
+    throw new ConflictError('Could not find an available shop URL, please try a different name');
   }
 
   // ---------------------------------------------------------------- refresh / logout
@@ -523,6 +766,23 @@ export function normalizeEmail(email: string): string {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) || value.length > 254)
     throw new ValidationError('Invalid e-mail address');
   return value;
+}
+
+/** Best-effort URL-safe slug from a company name, for `oauthSignup` (password signup asks the user
+ *  to pick their own slug directly — this derives one instead, since OAuth signup only collects a
+ *  display name). A non-Latin name (e.g. Thai) strips to nothing here, which is fine: `tenants.slug`
+ *  is just an internal identifier, not shown to the shop's own customers, and `pickAvailableSlug`'s
+ *  random-suffix fallback already keeps it unique either way. */
+function slugify(name: string): string {
+  const base = name
+    .trim()
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-+|-+$)/g, '')
+    .slice(0, 34);
+  return base.length >= 3 ? base : `shop-${uuidv7().slice(-6)}`;
 }
 
 /** Membership may act: exists, belongs to the credential's user, active, in a usable tenant. */

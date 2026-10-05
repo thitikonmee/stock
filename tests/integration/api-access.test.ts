@@ -47,6 +47,10 @@ const PUBLIC_ROUTES = new Set([
   'POST /api/v1/pos/devices/register',
   'GET /api/v1/channels/:channelCode/callback',
   'POST /api/v1/webhooks/:channelCode',
+  'POST /api/v1/auth/oauth/:provider/start',
+  'GET /api/v1/auth/oauth/:provider/callback',
+  'POST /api/v1/auth/oauth/resolve',
+  'POST /api/v1/auth/oauth/signup',
 ]);
 
 const VALID_BODY: Record<string, unknown> = {

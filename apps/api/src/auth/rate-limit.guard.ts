@@ -14,6 +14,7 @@ export const DEFAULT_RATE_LIMITS: RateLimits = {
   refresh: { limit: 300, windowSec: 900 },
   'invitation-accept': { limit: 20, windowSec: 900 },
   'device-register': { limit: 10, windowSec: 900 },
+  oauth: { limit: 20, windowSec: 900 },
 };
 
 /**

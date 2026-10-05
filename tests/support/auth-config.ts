@@ -12,6 +12,7 @@ export function testAuthConfig(overrides: Partial<auth.AuthConfig> = {}): auth.A
     ),
     hasher: new auth.PasswordHasher({ memoryCost: 1024, timeCost: 1, parallelism: 1 }),
     secretBox: new auth.SecretBox(randomBytes(32)),
+    oauthProviders: {},
     ...overrides,
   };
 }

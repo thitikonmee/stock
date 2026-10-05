@@ -40,7 +40,8 @@ export const DeviceAuth = () => SetMetadata(ACCESS_POLICY, { kind: 'device' } sa
  */
 export const AllowWithoutMfa = () => SetMetadata(ALLOW_WITHOUT_MFA, true);
 
-export type RateLimitName = 'signup' | 'login' | 'mfa' | 'refresh' | 'invitation-accept' | 'device-register';
+export type RateLimitName =
+  'signup' | 'login' | 'mfa' | 'refresh' | 'invitation-accept' | 'device-register' | 'oauth';
 
 /** Per-client-IP fixed-window limit for abuse-prone endpoints (limits configured in AppDeps). */
 export const RateLimit = (name: RateLimitName) => applyDecorators(SetMetadata(RATE_LIMIT, name));

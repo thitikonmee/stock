@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { resolve } from 'node:path';
 import { loadDotEnv, loadEnv } from '@stockos/config';
-import { channels, notifications } from '@stockos/core';
+import { auth, channels, notifications } from '@stockos/core';
 import { createDb } from '@stockos/database';
 import { createLogger } from '@stockos/shared';
 import { createApp } from './app';
@@ -29,6 +29,12 @@ async function bootstrap() {
   if (env.TIKTOK_FIXTURE_MODE && ['staging', 'prod'].includes(env.APP_ENV)) {
     throw new Error('TIKTOK_FIXTURE_MODE must never be set in staging/prod');
   }
+  if (env.GOOGLE_FIXTURE_MODE && ['staging', 'prod'].includes(env.APP_ENV)) {
+    throw new Error('GOOGLE_FIXTURE_MODE must never be set in staging/prod');
+  }
+  if (env.FACEBOOK_FIXTURE_MODE && ['staging', 'prod'].includes(env.APP_ENV)) {
+    throw new Error('FACEBOOK_FIXTURE_MODE must never be set in staging/prod');
+  }
   const mailer: notifications.EmailSender = env.SMTP_HOST
     ? new notifications.SmtpEmailSender({
         host: env.SMTP_HOST,
@@ -46,11 +52,27 @@ async function bootstrap() {
         },
       };
 
+  const authConfig = authConfigFromEnv(env, repoRoot);
+  if (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET) {
+    authConfig.oauthProviders.GOOGLE = new auth.GoogleOAuthProvider({
+      clientId: env.GOOGLE_CLIENT_ID,
+      clientSecret: env.GOOGLE_CLIENT_SECRET,
+      ...(env.GOOGLE_FIXTURE_MODE ? { fetcher: demoGoogleFixture(logger).fetcher() } : {}),
+    });
+  }
+  if (env.FACEBOOK_APP_ID && env.FACEBOOK_APP_SECRET) {
+    authConfig.oauthProviders.FACEBOOK = new auth.FacebookOAuthProvider({
+      appId: env.FACEBOOK_APP_ID,
+      appSecret: env.FACEBOOK_APP_SECRET,
+      ...(env.FACEBOOK_FIXTURE_MODE ? { fetcher: demoFacebookFixture(logger).fetcher() } : {}),
+    });
+  }
+
   const app = await createApp({
     db,
     platformDb,
     logger,
-    auth: authConfigFromEnv(env, repoRoot),
+    auth: authConfig,
     ...(env.SHOPEE_PARTNER_ID && env.SHOPEE_PARTNER_KEY
       ? {
           shopee: {
@@ -223,6 +245,26 @@ function demoTikTokFixture(logger: ReturnType<typeof createLogger>): channels.Ti
     ],
   });
   return fixture;
+}
+
+/** Dev/demo only (`GOOGLE_FIXTURE_MODE=true`) — a single settable fake Google profile, no demo
+ *  dataset to seed (unlike the channel fixtures): "continue with Google" either matches the
+ *  fixture's current `issuedProfile.email` to an existing tenant or offers self-service signup. */
+function demoGoogleFixture(logger: ReturnType<typeof createLogger>): auth.GoogleFixtureServer {
+  logger.info(
+    { event: 'google.fixture_mode' },
+    'GOOGLE_FIXTURE_MODE on: GoogleOAuthProvider talks to an in-memory fixture, not real Google',
+  );
+  return new auth.GoogleFixtureServer();
+}
+
+/** Dev/demo only (`FACEBOOK_FIXTURE_MODE=true`), same shape as `demoGoogleFixture`. */
+function demoFacebookFixture(logger: ReturnType<typeof createLogger>): auth.FacebookFixtureServer {
+  logger.info(
+    { event: 'facebook.fixture_mode' },
+    'FACEBOOK_FIXTURE_MODE on: FacebookOAuthProvider talks to an in-memory fixture, not real Facebook',
+  );
+  return new auth.FacebookFixtureServer();
 }
 
 bootstrap().catch((err: unknown) => {

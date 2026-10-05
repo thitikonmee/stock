@@ -28,5 +28,8 @@ export function authConfigFromEnv(env: Env, repoRoot: string): auth.AuthConfig {
       memoryCost: env.PASSWORD_ARGON2_MEMORY_KB,
     }),
     secretBox: new auth.SecretBox(Buffer.from(env.LOCAL_MASTER_KEY_BASE64, 'base64')),
+    // Populated by main.ts (same place Shopee/Lazada/TikTok's adapters get registered) once the
+    // relevant GOOGLE_*/FACEBOOK_* env vars are known to be present.
+    oauthProviders: {},
   };
 }

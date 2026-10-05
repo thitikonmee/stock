@@ -27,6 +27,8 @@ const ACTIONS: Record<string, { path: string; auth?: 'access' | 'mfa' | 'device'
   // this browser, not a cookie — a device is not a person); the PIN response becomes a normal
   // session, so every other /pos/* call afterwards is just an ordinary authenticated request.
   'pos-login': { path: '/pos/sessions', auth: 'device' },
+  'oauth-resolve': { path: '/auth/oauth/resolve' },
+  'oauth-signup': { path: '/auth/oauth/signup' },
 };
 
 export async function POST(req: Request, ctx: Ctx): Promise<NextResponse> {
@@ -79,6 +81,11 @@ export async function POST(req: Request, ctx: Ctx): Promise<NextResponse> {
     const out = NextResponse.json({ status: 'mfa-required' });
     setMfaCookie(out, String((body as { mfaToken: string }).mfaToken));
     return out;
+  }
+  // `oauth-resolve`'s one non-token, non-mfa shape: a verified identity with no existing account
+  // yet. Not an error — relay it as-is so the login page can show the one-field "name your shop" step.
+  if (typeof body === 'object' && body !== null && (body as { needsSignup?: boolean }).needsSignup) {
+    return NextResponse.json(body);
   }
   if (!isTokenPair(body)) return problem(502, 'BAD_UPSTREAM', 'Unexpected response');
   const out = NextResponse.json({ status: 'signed-in' });

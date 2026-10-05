@@ -115,9 +115,11 @@ export async function apiDownload(
   URL.revokeObjectURL(url);
 }
 
-/** Session actions (login, signup, mfa, step-up, logout, accept-invite) handled by the BFF. */
-export async function session(action: string, body?: Json): Promise<{ status: string }> {
+/** Session actions (login, signup, mfa, step-up, logout, accept-invite, oauth-*) handled by the
+ *  BFF. Generic because one action — `oauth-resolve` — can also come back as a `needsSignup` shape
+ *  instead of the usual `{status}`; every other call site keeps the old default unchanged. */
+export async function session<T = { status: string }>(action: string, body?: Json): Promise<T> {
   const res = await send(`/api/session/${action}`, { method: 'POST', ...(body ? { body } : {}) });
   if (!res.ok) throw await toError(res);
-  return (await res.json()) as { status: string };
+  return (await res.json()) as T;
 }

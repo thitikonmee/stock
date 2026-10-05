@@ -4,8 +4,13 @@ export {
   normalizeEmail,
   type AuthConfig,
   type LoginResult,
+  type OAuthSignInResult,
   type SignupInput,
 } from './application/auth-service';
+export type { OAuthProfile, OAuthProvider, OAuthProviderCode } from './oauth/provider';
+export { GoogleOAuthProvider, type GoogleOAuthConfig } from './oauth/google-provider';
+export { FacebookOAuthProvider, type FacebookOAuthConfig } from './oauth/facebook-provider';
+export { GoogleFixtureServer, FacebookFixtureServer } from './oauth/fixtures/fixture-fetcher';
 export type { TokenPair } from './application/sessions';
 export {
   UserService,

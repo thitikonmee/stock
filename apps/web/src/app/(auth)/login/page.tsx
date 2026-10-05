@@ -1,9 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Button, ErrorBox, Field, Input } from '@/components/ui';
-import { ApiError, session } from '@/lib/client/api';
+import { api, ApiError, session } from '@/lib/client/api';
 
 function GoogleIcon() {
   return (
@@ -33,7 +33,17 @@ function FacebookIcon() {
   );
 }
 
-type Step = 'credentials' | 'tenant' | 'mfa';
+type Step = 'credentials' | 'tenant' | 'mfa' | 'signup';
+type OAuthProvider = 'google' | 'facebook';
+
+interface NeedsSignup {
+  needsSignup: true;
+  suggestedName: string;
+  email: string;
+}
+interface SessionStatus {
+  status: string;
+}
 
 /** Only follow same-site relative paths after login (no open redirect). */
 function nextPath(): string {
@@ -45,18 +55,66 @@ export default function LoginPage() {
   const [step, setStep] = useState<Step>('credentials');
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
+  // Set once an OAuth callback hands back a verified-identity ticket; from then on `signIn()`
+  // resolves the ticket instead of posting identifier/password, but reuses every other step
+  // (tenant picker, MFA) unchanged — they already just call `signIn(tenantSlug)` again.
+  const [oauthTicket, setOauthTicket] = useState<string | null>(null);
+  const [companyName, setCompanyName] = useState('');
+  const [signupEmail, setSignupEmail] = useState('');
   const [tenants, setTenants] = useState<{ slug: string; name: string }[]>([]);
   const [code, setCode] = useState('');
+  const [startingProvider, setStartingProvider] = useState<OAuthProvider | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>();
 
-  async function signIn(tenantSlug?: string) {
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const ticket = q.get('oauth');
+    const oauthError = q.get('oauthError');
+    if (ticket || oauthError) window.history.replaceState({}, '', '/login');
+    if (oauthError) {
+      setError(new ApiError(0, 'OAUTH_FAILED', oauthError));
+      return;
+    }
+    if (ticket) {
+      setOauthTicket(ticket);
+      void signIn(undefined, ticket);
+    }
+    // Run once on mount only — re-checking on every render would re-trigger the auto sign-in.
+  }, []);
+
+  async function startOAuth(provider: OAuthProvider) {
+    setStartingProvider(provider);
+    setError(undefined);
+    try {
+      const res = await api<{ authorizeUrl: string }>(`/auth/oauth/${provider}/start`, { method: 'POST' });
+      window.location.assign(res.authorizeUrl);
+    } catch (err) {
+      setError(err);
+      setStartingProvider(null);
+    }
+  }
+
+  async function signIn(tenantSlug?: string, ticketOverride?: string) {
+    const ticket = ticketOverride ?? oauthTicket;
     setBusy(true);
     setError(undefined);
     try {
-      const res = await session('login', { identifier, password, ...(tenantSlug ? { tenantSlug } : {}) });
-      if (res.status === 'mfa-required') setStep('mfa');
-      else window.location.assign(nextPath());
+      const res = await session<SessionStatus | NeedsSignup>(
+        ticket ? 'oauth-resolve' : 'login',
+        ticket
+          ? { ticket, ...(tenantSlug ? { tenantSlug } : {}) }
+          : { identifier, password, ...(tenantSlug ? { tenantSlug } : {}) },
+      );
+      if ('needsSignup' in res) {
+        setCompanyName(res.suggestedName);
+        setSignupEmail(res.email);
+        setStep('signup');
+      } else if (res.status === 'mfa-required') {
+        setStep('mfa');
+      } else {
+        window.location.assign(nextPath());
+      }
     } catch (err) {
       if (err instanceof ApiError && err.code === 'TENANT_SELECTION_REQUIRED') {
         setTenants((err.meta.tenants as { slug: string; name: string }[]) ?? []);
@@ -79,6 +137,46 @@ export default function LoginPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function completeSignup(e: FormEvent) {
+    e.preventDefault();
+    if (!oauthTicket) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      await session('oauth-signup', { ticket: oauthTicket, companyName });
+      window.location.assign(nextPath());
+    } catch (err) {
+      setError(err);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (step === 'signup') {
+    return (
+      <form onSubmit={completeSignup} className="space-y-4">
+        <h1 className="text-lg font-semibold">ตั้งชื่อร้านของคุณ</h1>
+        <p className="text-sm text-slate-600">
+          ยืนยันตัวตนด้วย {signupEmail} สำเร็จ — ตั้งชื่อร้าน/บริษัทเพื่อเริ่มใช้งาน
+        </p>
+        <Field label="ชื่อร้าน/บริษัท">
+          <Input
+            value={companyName}
+            onChange={(e) => setCompanyName(e.target.value)}
+            autoFocus
+            required
+            minLength={2}
+            maxLength={120}
+          />
+        </Field>
+        <ErrorBox error={error} />
+        <Button type="submit" busy={busy} className="w-full">
+          เริ่มใช้งาน
+        </Button>
+      </form>
+    );
   }
 
   if (step === 'mfa') {
@@ -140,21 +238,21 @@ export default function LoginPage() {
       <div className="space-y-2">
         <button
           type="button"
-          disabled
-          title="ยังไม่เปิดให้ใช้งาน"
-          className="flex h-10 w-full cursor-not-allowed items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white text-sm text-slate-400"
+          onClick={() => void startOAuth('google')}
+          disabled={startingProvider !== null}
+          className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
         >
           <GoogleIcon />
-          ดำเนินการต่อด้วย Google
+          {startingProvider === 'google' ? 'กำลังไปที่ Google…' : 'ดำเนินการต่อด้วย Google'}
         </button>
         <button
           type="button"
-          disabled
-          title="ยังไม่เปิดให้ใช้งาน"
-          className="flex h-10 w-full cursor-not-allowed items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white text-sm text-slate-400"
+          onClick={() => void startOAuth('facebook')}
+          disabled={startingProvider !== null}
+          className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
         >
           <FacebookIcon />
-          ดำเนินการต่อด้วย Facebook
+          {startingProvider === 'facebook' ? 'กำลังไปที่ Facebook…' : 'ดำเนินการต่อด้วย Facebook'}
         </button>
       </div>
       <div className="flex items-center gap-3 text-xs text-slate-400">

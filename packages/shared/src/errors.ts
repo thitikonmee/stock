@@ -41,7 +41,8 @@ export type UnauthenticatedCode =
   | 'ACCOUNT_LOCKED'
   | 'TOKEN_EXPIRED'
   | 'TOKEN_REUSED'
-  | 'INVALID_MFA_CODE';
+  | 'INVALID_MFA_CODE'
+  | 'OAUTH_FAILED';
 
 /** 401 — who you are could not be established. Messages never reveal which part was wrong. */
 export class UnauthenticatedError extends DomainError {

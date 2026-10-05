@@ -29,6 +29,7 @@ describe('api app', () => {
         ),
         hasher: new auth.PasswordHasher({ memoryCost: 1024, timeCost: 1, parallelism: 1 }),
         secretBox: new auth.SecretBox(Buffer.alloc(32)),
+        oauthProviders: {},
       },
       readinessCheck: async () => {
         if (!healthy.value) throw new Error('connection refused');

@@ -76,6 +76,14 @@ export const EnvSchema = z.object({
   TIKTOK_AUTH_BASE_URL: z.string().url().default('https://auth.tiktok-shops.com'),
   /** Dev/demo only, same caveat as SHOPEE_FIXTURE_MODE. */
   TIKTOK_FIXTURE_MODE: z.coerce.boolean().default(false),
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  /** Dev/demo only, same caveat as SHOPEE_FIXTURE_MODE. */
+  GOOGLE_FIXTURE_MODE: z.coerce.boolean().default(false),
+  FACEBOOK_APP_ID: z.string().optional(),
+  FACEBOOK_APP_SECRET: z.string().optional(),
+  /** Dev/demo only, same caveat as SHOPEE_FIXTURE_MODE. */
+  FACEBOOK_FIXTURE_MODE: z.coerce.boolean().default(false),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().positive().default(1025),
   SMTP_USER: z.string().optional(),
