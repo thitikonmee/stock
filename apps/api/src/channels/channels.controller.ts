@@ -63,6 +63,7 @@ const DefaultWarehouseBody = z.strictObject({ warehouseId: z.string() });
 const StockPolicyBody = z.strictObject({
   channelAccountId: z.string().nullish(),
   variantId: z.string().nullish(),
+  strategy: z.enum(['GLOBAL_POOL', 'CHANNEL_ALLOCATION']).optional(),
   safetyStock: z.string().optional(),
   bufferPercent: z.string().optional(),
   maxPushQty: z.string().nullish(),
@@ -215,6 +216,7 @@ export class ChannelStockPoliciesController {
       this.policies.upsert(tx, p, {
         channelAccountId: input.channelAccountId ?? null,
         variantId: input.variantId ?? null,
+        ...(input.strategy ? { strategy: input.strategy } : {}),
         ...(input.safetyStock !== undefined ? { safetyStock: input.safetyStock } : {}),
         ...(input.bufferPercent !== undefined ? { bufferPercent: input.bufferPercent } : {}),
         maxPushQty: input.maxPushQty ?? null,

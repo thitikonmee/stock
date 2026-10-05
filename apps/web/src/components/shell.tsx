@@ -86,6 +86,10 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: '/inventory/stock', label: 'สต็อกสินค้า', permission: 'inventory.read' },
       { href: '/inventory/adjustments', label: 'ปรับสต็อก', permission: 'inventory.read' },
+      { href: '/inventory/purchases', label: 'ใบสั่งซื้อ', permission: 'purchase.read' },
+      { href: '/inventory/transfers', label: 'โอนสต็อก', permission: 'inventory.read' },
+      { href: '/inventory/counts', label: 'นับสต็อก', permission: 'inventory.read' },
+      { href: '/inventory/locations', label: 'ตำแหน่งจัดเก็บ', permission: 'inventory.read' },
     ],
   },
   { key: 'orders', label: 'ออเดอร์', icon: ShoppingCart, href: '/orders', permission: 'order.read' },

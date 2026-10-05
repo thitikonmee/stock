@@ -3,7 +3,8 @@ import type { Tx } from '@stockos/database';
 import { NotFoundError, uuidv7 } from '@stockos/shared';
 import { assertCan, systemPrincipal, type Principal } from '../../iam/public-api';
 import type { InventoryQueryService } from '../../inventory/public-api';
-import { computeSellable } from '../domain/stock-policy';
+import { computeAccountSellable } from '../domain/stock-policy';
+import { readQuotaPosition } from './allocation-service';
 import type { StockUpdate } from '../domain/channel-adapter';
 import type { AdapterRegistry } from './adapter-registry';
 import type { TokenManager } from './token-manager';
@@ -65,7 +66,10 @@ export class StockSyncService {
         warehouseId: account.defaultWarehouseId,
       });
       const available = balance.data[0]?.available ?? '0';
-      const sellable = computeSellable(available, policy);
+      const quota = account.defaultWarehouseId
+        ? await readQuotaPosition(tx, channelAccountId, account.defaultWarehouseId, row.variant_id)
+        : { ownRemaining: null, othersRemaining: '0' };
+      const sellable = computeAccountSellable(available, policy, quota);
       const pushQty = (Number(sellable) / Number(row.quantity_multiplier || '1')).toFixed(0);
       updates.push({
         externalItemId: row.external_item_id,

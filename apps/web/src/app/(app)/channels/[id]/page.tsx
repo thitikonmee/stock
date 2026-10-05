@@ -20,6 +20,7 @@ import {
 } from '@/components/ui';
 import { api } from '@/lib/client/api';
 import type {
+  ChannelAllocation,
   ChannelAccount,
   ChannelAccountStatus,
   ChannelProductVariantRow,
@@ -298,6 +299,7 @@ export default function ChannelAccountDetailPage() {
       />
 
       <StockPolicyPanel accountId={id} canManage={canManage} />
+      <AllocationPanel accountId={id} canManage={canManage} />
 
       <Card>
         <h2 className="mb-3 text-sm font-semibold text-slate-700">ประวัติ sync</h2>
@@ -495,6 +497,7 @@ function StockPolicyPanel({ accountId, canManage }: { accountId: string; canMana
         method: 'PUT',
         body: {
           channelAccountId: accountId,
+          strategy: String(form.get('strategy') || 'GLOBAL_POOL'),
           safetyStock: String(form.get('safetyStock') || '0'),
           bufferPercent: String(form.get('bufferPercent') || '0'),
           maxPushQty: form.get('maxPushQty') ? String(form.get('maxPushQty')) : null,
@@ -517,6 +520,21 @@ function StockPolicyPanel({ accountId, canManage }: { accountId: string; canMana
         <Loading />
       ) : (
         <form onSubmit={save} className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <div className="col-span-2 sm:col-span-4">
+            <Field
+              label="วิธีแบ่งสต็อก"
+              hint="แบ่งโควต้า: ส่งให้ร้านนี้ไม่เกินโควต้าที่กำหนดด้านล่าง และช่องทางอื่นใช้โควต้านี้ไม่ได้"
+            >
+              <Select
+                name="strategy"
+                defaultValue={accountLevel?.strategy ?? 'GLOBAL_POOL'}
+                disabled={!canManage}
+              >
+                <option value="GLOBAL_POOL">ใช้สต็อกรวม (ขายจาก pool เดียวกัน)</option>
+                <option value="CHANNEL_ALLOCATION">แบ่งโควต้าเฉพาะร้านนี้</option>
+              </Select>
+            </Field>
+          </div>
           <Field label="กันสต็อกไว้ (safety stock)">
             <Input name="safetyStock" defaultValue={accountLevel?.safetyStock ?? '0'} disabled={!canManage} />
           </Field>
@@ -606,5 +624,117 @@ function ReconciliationItemsModal({ runId, onClose }: { runId: string; onClose: 
         </Button>
       </div>
     </Modal>
+  );
+}
+
+/** CHANNEL_ALLOCATION quota editor (docs/04-inventory.md §8). */
+function AllocationPanel({ accountId, canManage }: { accountId: string; canManage: boolean }) {
+  const { data, error, reload } = useResource<ChannelAllocation[]>(
+    `/channel-accounts/${accountId}/allocations`,
+  );
+  const [edits, setEdits] = useState<Record<string, string>>({});
+  const [sku, setSku] = useState('');
+  const [newQty, setNewQty] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [saveError, setSaveError] = useState<unknown>();
+
+  async function save(lines: { variantId: string; allocatedQty: string }[]) {
+    setBusy(true);
+    setSaveError(undefined);
+    try {
+      await api(`/channel-accounts/${accountId}/allocations`, { method: 'PUT', body: { lines } });
+      setEdits({});
+      setSku('');
+      setNewQty('');
+      await reload();
+    } catch (err) {
+      setSaveError(err);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function add(e: FormEvent) {
+    e.preventDefault();
+    try {
+      const v = await api<{ id: string }>(`/variants/lookup?sku=${encodeURIComponent(sku)}`);
+      await save([{ variantId: v.id, allocatedQty: newQty }]);
+    } catch (err) {
+      setSaveError(err);
+    }
+  }
+
+  return (
+    <Card title="โควต้าสต็อกของร้านนี้">
+      <p className="mb-3 text-sm text-slate-600">
+        สต็อกที่จัดสรรให้ร้านนี้จะถูกกันไว้ — หน้าร้าน (POS) และช่องทางอื่นขายส่วนนี้ไม่ได้
+        ออเดอร์จากร้านนี้จะตัดโควต้า และคืนโควต้าเมื่อยกเลิก
+      </p>
+      <ErrorBox error={error ?? saveError} />
+      <Table
+        head={['SKU', 'สินค้า', 'โควต้า', 'ใช้ไป', 'คงเหลือ', 'สต็อกที่ยังไม่จัดสรร']}
+        empty={data?.length === 0}
+      >
+        {data?.map((a) => (
+          <tr key={`${a.warehouseId}:${a.variantId}`}>
+            <Td className="font-mono">{a.sku}</Td>
+            <Td>{a.variantName}</Td>
+            <Td>
+              {canManage ? (
+                <Input
+                  inputMode="decimal"
+                  className="w-24"
+                  value={edits[a.variantId] ?? String(Number(a.allocatedQty))}
+                  onChange={(e) => setEdits({ ...edits, [a.variantId]: e.target.value })}
+                />
+              ) : (
+                Number(a.allocatedQty)
+              )}
+            </Td>
+            <Td className="tabular-nums">{Number(a.consumedQty)}</Td>
+            <Td className="tabular-nums">{Number(a.remainingQty)}</Td>
+            <Td className="tabular-nums text-slate-500">{Number(a.unallocatedQty)}</Td>
+          </tr>
+        ))}
+      </Table>
+      {canManage ? (
+        <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
+          <form onSubmit={add} className="flex items-end gap-2">
+            <Field label="SKU">
+              <Input
+                value={sku}
+                onChange={(e) => setSku(e.target.value.toUpperCase())}
+                className="w-40"
+                required
+              />
+            </Field>
+            <Field label="โควต้า">
+              <Input
+                inputMode="decimal"
+                value={newQty}
+                onChange={(e) => setNewQty(e.target.value)}
+                className="w-24"
+                required
+              />
+            </Field>
+            <Button type="submit" variant="secondary" busy={busy}>
+              เพิ่มโควต้า
+            </Button>
+          </form>
+          {Object.keys(edits).length > 0 ? (
+            <Button
+              busy={busy}
+              onClick={() =>
+                void save(
+                  Object.entries(edits).map(([variantId, allocatedQty]) => ({ variantId, allocatedQty })),
+                )
+              }
+            >
+              บันทึกโควต้า
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+    </Card>
   );
 }

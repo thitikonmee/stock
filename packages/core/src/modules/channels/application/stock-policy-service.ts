@@ -12,11 +12,12 @@ export class StockPolicyService {
    *  and `ReconciliationService` (what we'd expect the channel to show) so the two agree. */
   async resolveEffective(tx: Tx, channelAccountId: string, variantId: string): Promise<StockPolicy> {
     const { rows } = await sql<{
+      strategy: StockPolicy['strategy'];
       safety_stock: string;
       buffer_percent: string;
       max_push_qty: string | null;
       push_zero_below: string;
-    }>`select safety_stock, buffer_percent, max_push_qty, push_zero_below from channel_stock_policies
+    }>`select strategy, safety_stock, buffer_percent, max_push_qty, push_zero_below from channel_stock_policies
         where tenant_id = current_tenant_id()
           and (channel_account_id = ${channelAccountId} or channel_account_id is null)
           and (variant_id = ${variantId} or variant_id is null)
@@ -25,6 +26,7 @@ export class StockPolicyService {
     const row = rows[0];
     if (!row) return DEFAULT_STOCK_POLICY;
     return {
+      strategy: row.strategy,
       safetyStock: row.safety_stock,
       bufferPercent: row.buffer_percent,
       maxPushQty: row.max_push_qty,
@@ -45,14 +47,14 @@ export class StockPolicyService {
   async upsert(tx: Tx, principal: Principal, input: UpsertStockPolicyInput): Promise<StockPolicyRow> {
     assertCan(principal, 'channel.manage');
     const { rows } = await sql<{ id: string }>`
-      insert into channel_stock_policies (tenant_id, id, channel_account_id, variant_id, safety_stock,
+      insert into channel_stock_policies (tenant_id, id, channel_account_id, variant_id, strategy, safety_stock,
                                           buffer_percent, max_push_qty, push_zero_below)
       values (${principal.tenantId}, ${uuidv7()}, ${input.channelAccountId ?? null}, ${input.variantId ?? null},
-              ${input.safetyStock ?? '0'}, ${input.bufferPercent ?? '0'}, ${input.maxPushQty ?? null},
-              ${input.pushZeroBelow ?? '0'})
+              ${input.strategy ?? 'GLOBAL_POOL'}, ${input.safetyStock ?? '0'}, ${input.bufferPercent ?? '0'},
+              ${input.maxPushQty ?? null}, ${input.pushZeroBelow ?? '0'})
       on conflict (tenant_id, coalesce(channel_account_id, '00000000-0000-0000-0000-000000000000'),
                     coalesce(variant_id, '00000000-0000-0000-0000-000000000000'))
-        do update set safety_stock = excluded.safety_stock, buffer_percent = excluded.buffer_percent,
+        do update set strategy = excluded.strategy, safety_stock = excluded.safety_stock, buffer_percent = excluded.buffer_percent,
                       max_push_qty = excluded.max_push_qty, push_zero_below = excluded.push_zero_below
       returning id`.execute(tx);
     const { rows: full } = await sql<Row>`

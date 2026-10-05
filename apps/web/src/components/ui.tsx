@@ -1,11 +1,13 @@
 'use client';
 
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react';
+import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, Ref, SelectHTMLAttributes } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Info, Loader2, PackageCheck, PackageX, Trash2 } from 'lucide-react';
 import { messageFor } from '@/lib/client/messages';
 
 const cx = (...classes: (string | false | null | undefined)[]) => classes.filter(Boolean).join(' ');
+/** Full width unless the caller sized it: two width utilities on one element don't override each other. */
+const fill = (className?: string) => (/(^|\s)w-/.test(className ?? '') ? false : 'w-full');
 
 type Variant = 'primary' | 'secondary' | 'danger' | 'success' | 'dark' | 'ghost';
 
@@ -46,7 +48,7 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
   const text = required ? label.trim().slice(0, -1).trim() : label;
   return (
     <label className="block space-y-1.5">
-      <span className="text-sm font-medium text-slate-700">
+      <span className="block text-sm font-medium text-slate-700">
         {text}
         {required ? <span className="ml-0.5 text-red-500">*</span> : null}
       </span>
@@ -60,10 +62,10 @@ export function Input({
   className,
   icon,
   ...props
-}: InputHTMLAttributes<HTMLInputElement> & { icon?: ReactNode }) {
+}: InputHTMLAttributes<HTMLInputElement> & { icon?: ReactNode; ref?: Ref<HTMLInputElement> }) {
   if (icon) {
     return (
-      <div className="relative">
+      <div className={cx('relative', fill(className), className)}>
         <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400">
           {icon}
         </span>
@@ -71,7 +73,6 @@ export function Input({
           {...props}
           className={cx(
             'h-10 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm placeholder:text-slate-400 focus:border-brand-500',
-            className,
           )}
         />
       </div>
@@ -81,7 +82,8 @@ export function Input({
     <input
       {...props}
       className={cx(
-        'h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm placeholder:text-slate-400 focus:border-brand-500',
+        'h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm placeholder:text-slate-400 focus:border-brand-500',
+        fill(className),
         className,
       )}
     />
@@ -92,7 +94,11 @@ export function Select({ className, children, ...props }: SelectHTMLAttributes<H
   return (
     <select
       {...props}
-      className={cx('h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm', className)}
+      className={cx(
+        'h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm',
+        fill(className),
+        className,
+      )}
     >
       {children}
     </select>
@@ -144,7 +150,7 @@ export function PageHeader({
   actions,
   breadcrumb,
 }: {
-  title: string;
+  title: ReactNode;
   description?: string;
   actions?: ReactNode;
   breadcrumb?: Crumb[];
@@ -218,7 +224,12 @@ export function Badge({
     teal: 'bg-brand-100 text-brand-800',
   };
   return (
-    <span className={cx('inline-flex rounded-full px-2 py-0.5 text-xs font-medium', styles[tone])}>
+    <span
+      className={cx(
+        'inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium',
+        styles[tone],
+      )}
+    >
       {children}
     </span>
   );

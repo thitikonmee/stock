@@ -73,6 +73,7 @@ export interface StockPolicyRow {
 export interface UpsertStockPolicyInput {
   channelAccountId?: string | null;
   variantId?: string | null;
+  strategy?: 'GLOBAL_POOL' | 'CHANNEL_ALLOCATION';
   safetyStock?: string;
   bufferPercent?: string;
   maxPushQty?: string | null;

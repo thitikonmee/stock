@@ -578,3 +578,189 @@ export interface ReconciliationItemRow {
   classification: string | null;
   resolution: string | null;
 }
+
+// ---------------------------------------------------------------- Phase 9: warehouse operations
+
+export type PurchaseStatus =
+  | 'DRAFT'
+  | 'PENDING_APPROVAL'
+  | 'APPROVED'
+  | 'SENT'
+  | 'PARTIALLY_RECEIVED'
+  | 'RECEIVED'
+  | 'CLOSED'
+  | 'CANCELLED';
+
+export interface PurchaseItem {
+  id: string;
+  variantId: string;
+  sku: string;
+  variantName: string;
+  unitId: string;
+  unitCode: string;
+  unitFactor: string;
+  orderedQty: string;
+  receivedQty: string;
+  cancelledQty: string;
+  outstandingQty: string;
+  unitCost: string;
+  discountAmount: string;
+  taxRate: string;
+  lineTotal: string;
+}
+
+export interface Purchase {
+  id: string;
+  docNo: string;
+  supplierId: string;
+  supplierName: string;
+  warehouseId: string;
+  status: PurchaseStatus;
+  expectedAt: string | null;
+  subtotal: string;
+  discountTotal: string;
+  taxTotal: string;
+  grandTotal: string;
+  note: string | null;
+  createdBy: string;
+  approvedBy: string | null;
+  approvedAt: string | null;
+  version: number;
+  createdAt: string;
+  items: PurchaseItem[];
+  receipts: {
+    id: string;
+    docNo: string;
+    supplierInvoiceNo: string | null;
+    receivedAt: string;
+    lines: number;
+  }[];
+}
+
+export interface SupplierPerformance {
+  supplierId: string;
+  purchaseOrders: number;
+  receivedOrders: number;
+  onTimeRate: string | null;
+  fillRate: string | null;
+  avgLeadTimeDays: string | null;
+  totalSpend: string;
+}
+
+export type TransferStatus =
+  | 'DRAFT'
+  | 'REQUESTED'
+  | 'APPROVED'
+  | 'PICKING'
+  | 'SHIPPED'
+  | 'PARTIALLY_RECEIVED'
+  | 'RECEIVED'
+  | 'COMPLETED'
+  | 'CANCELLED';
+
+export interface TransferItem {
+  id: string;
+  variantId: string;
+  sku: string;
+  variantName: string;
+  requestedQty: string;
+  approvedQty: string | null;
+  shippedQty: string;
+  receivedQty: string;
+  damagedQty: string;
+  inTransitQty: string;
+}
+
+export interface Transfer {
+  id: string;
+  docNo: string;
+  fromWarehouseId: string;
+  toWarehouseId: string;
+  status: TransferStatus;
+  note: string | null;
+  requestedBy: string;
+  approvedBy: string | null;
+  shippedAt: string | null;
+  receivedAt: string | null;
+  version: number;
+  createdAt: string;
+  items: TransferItem[];
+}
+
+export type CountType = 'FULL' | 'CYCLE' | 'BLIND' | 'SPOT';
+export type CountStatus =
+  'DRAFT' | 'IN_PROGRESS' | 'SUBMITTED' | 'PENDING_APPROVAL' | 'APPROVED' | 'POSTED' | 'CANCELLED';
+
+export interface CountItem {
+  id: string;
+  variantId: string;
+  sku: string;
+  variantName: string;
+  snapshotQty: string | null;
+  countedQty: string | null;
+  movementSinceSnapshot: string | null;
+  variance: string | null;
+  countedAt: string | null;
+  recountRequired: boolean;
+}
+
+export interface StockCount {
+  id: string;
+  docNo: string;
+  warehouseId: string;
+  countType: CountType;
+  status: CountStatus;
+  varianceTolerance: string;
+  createdBy: string;
+  approvedBy: string | null;
+  startedAt: string | null;
+  submittedAt: string | null;
+  postedAdjustmentId: string | null;
+  version: number;
+  createdAt: string;
+  totals: { items: number; counted: number; withVariance: number; recountRequired: number };
+  items?: CountItem[];
+}
+
+export type LocationLevel = 'ZONE' | 'RACK' | 'SHELF' | 'BIN';
+
+export interface WarehouseLocation {
+  id: string;
+  warehouseId: string;
+  parentId: string | null;
+  level: LocationLevel;
+  code: string;
+  fullCode: string;
+  barcode: string | null;
+  isPickable: boolean;
+  isActive: boolean;
+}
+
+export interface LocationStock {
+  locationId: string;
+  fullCode: string;
+  variantId: string;
+  sku: string;
+  variantName: string;
+  onHand: string;
+}
+
+export interface LocationDiscrepancy {
+  variantId: string;
+  sku: string;
+  warehouseOnHand: string;
+  locatedOnHand: string;
+  unlocated: string;
+}
+
+export interface ChannelAllocation {
+  channelAccountId: string;
+  warehouseId: string;
+  variantId: string;
+  sku: string;
+  variantName: string;
+  allocatedQty: string;
+  consumedQty: string;
+  remainingQty: string;
+  unallocatedQty: string;
+}
