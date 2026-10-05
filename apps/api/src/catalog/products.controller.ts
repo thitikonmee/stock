@@ -24,6 +24,17 @@ import { DB } from '../tokens';
 const defined = <T extends object>(o: T) =>
   Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as T;
 
+/** `x-file-name` arrives percent-encoded (a raw header can't carry non-ASCII, e.g. a Thai file
+ *  name) — decode it back, falling back to the raw value if it was never actually encoded. */
+function decodeFileName(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
 const optionsSchema = z
   .array(
     z.object({ name: z.string().trim().min(1).max(40), values: z.array(z.string().trim().min(1).max(40)) }),
@@ -150,11 +161,60 @@ export class ProductsController {
         createdVariants: 0,
         updatedVariants: 0,
         errors: [{ row: 0, message: 'Empty file' }],
+        rows: [],
       };
     }
-    return tenantTx(this.db, p.tenantId, (tx) => this.importExport.importXlsx(tx, p, body, fileName), {
-      statementTimeoutMs: 60_000,
-    });
+    return tenantTx(
+      this.db,
+      p.tenantId,
+      (tx) => this.importExport.importXlsx(tx, p, body, decodeFileName(fileName)),
+      { statementTimeoutMs: 60_000 },
+    );
+  }
+
+  /**
+   * Same parsing/validation as `import`, but never commits: the whole transaction is always rolled
+   * back (see `ImportExportService.DryRunAbort`). Powers the "preview before you commit" table —
+   * capped at a much tighter row count than the real import, since it's meant for a quick look, not
+   * a bulk job.
+   */
+  @RequirePermission('product.create')
+  @Post('import/preview')
+  @HttpCode(200)
+  async importPreview(
+    @CurrentPrincipal() p: iam.Principal,
+    @Body() body: Buffer,
+    @Headers('x-file-name') fileName: string | undefined,
+  ) {
+    if (!Buffer.isBuffer(body) || body.length === 0) {
+      return {
+        id: null,
+        status: 'FAILED',
+        totalRows: 0,
+        createdProducts: 0,
+        createdVariants: 0,
+        updatedVariants: 0,
+        errors: [{ row: 0, message: 'Empty file' }],
+        rows: [],
+      };
+    }
+    try {
+      await tenantTx(
+        this.db,
+        p.tenantId,
+        (tx) =>
+          this.importExport.importXlsx(tx, p, body, decodeFileName(fileName), {
+            dryRun: true,
+            maxRows: 1000,
+          }),
+        { statementTimeoutMs: 60_000 },
+      );
+      /* istanbul ignore next -- importXlsx always throws DryRunAbort when dryRun is true */
+      throw new Error('unreachable: dry-run import did not abort');
+    } catch (err) {
+      if (err instanceof catalog.DryRunAbort) return err.result;
+      throw err;
+    }
   }
 
   @RequirePermission('product.read')

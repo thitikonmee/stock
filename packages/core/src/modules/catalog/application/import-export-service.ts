@@ -1,3 +1,4 @@
+import { Readable } from 'node:stream';
 import ExcelJS from 'exceljs';
 import { sql } from 'kysely';
 import type { Tx } from '@stockos/database';
@@ -5,19 +6,42 @@ import { NotFoundError, ValidationError, isUuid, uuidv7 } from '@stockos/shared'
 import { assertCan, type Principal } from '../../iam/public-api';
 import type { ProductService } from './product-service';
 
+export interface ImportPreviewRow {
+  row: number;
+  status: 'success' | 'error';
+  note: string;
+  sku: string;
+  productName: string;
+  aliasName: string;
+  description: string;
+  properties: string;
+}
+
 export interface ImportJob {
-  id: string;
+  id: string | null;
   status: 'PROCESSING' | 'COMPLETED' | 'FAILED';
   totalRows: number;
   createdProducts: number;
   createdVariants: number;
   updatedVariants: number;
   errors: { row: number; message: string }[];
+  /** Per-row detail, for the import-preview UI. Empty when loaded back via `getJob` (not persisted). */
+  rows: ImportPreviewRow[];
+}
+
+/** Thrown by `importXlsx` when called with `dryRun: true`, to unwind the transaction (it must never
+ *  commit) while still carrying the computed preview back to the caller. Not a real error — the
+ *  controller catches this specifically and returns `.result` as a normal 200 response. */
+export class DryRunAbort extends Error {
+  constructor(readonly result: ImportJob) {
+    super('dry-run-abort');
+  }
 }
 
 const HEADERS = [
   'productCode',
   'productName',
+  'description',
   'brandName',
   'baseUnitCode',
   'sku',
@@ -47,6 +71,7 @@ export class ImportExportService {
     sheet.addRow([
       'SHOE-001',
       'Nike Air Max',
+      'รองเท้าวิ่งน้ำหนักเบา พื้นรองรับแรงกระแทก',
       'Nike',
       'PCS',
       'SHOE-001-BLK-41',
@@ -59,16 +84,31 @@ export class ImportExportService {
     return wb.xlsx.writeBuffer() as unknown as Promise<Uint8Array>;
   }
 
-  async importXlsx(tx: Tx, principal: Principal, fileBuffer: Buffer, fileName?: string): Promise<ImportJob> {
+  async importXlsx(
+    tx: Tx,
+    principal: Principal,
+    fileBuffer: Buffer,
+    fileName?: string,
+    options: { dryRun?: boolean; maxRows?: number } = {},
+  ): Promise<ImportJob> {
     assertCan(principal, 'product.create');
     const wb = new ExcelJS.Workbook();
+    const isCsv = (fileName ?? '').trim().toLowerCase().endsWith('.csv');
     try {
-      // exceljs's own .d.ts module-locally shadows `Buffer` with a bogus `extends ArrayBuffer`
-      // interface, incompatible with the real (Uint8Array-backed) Node Buffer. `Parameters<>`
-      // recovers that exact (unexported) shadow type so the cast through `unknown` lands correctly.
-      await wb.xlsx.load(fileBuffer as unknown as Parameters<typeof wb.xlsx.load>[0]);
+      if (isCsv) {
+        // `map` disabled: fast-csv's default coerces numeric-looking cells to JS numbers (e.g. a
+        // SKU of "007" -> 7), silently corrupting business codes. Every field here is text.
+        await wb.csv.read(Readable.from(fileBuffer), {
+          map: (value: unknown) => (value === '' ? null : value),
+        });
+      } else {
+        // exceljs's own .d.ts module-locally shadows `Buffer` with a bogus `extends ArrayBuffer`
+        // interface, incompatible with the real (Uint8Array-backed) Node Buffer. `Parameters<>`
+        // recovers that exact (unexported) shadow type so the cast through `unknown` lands correctly.
+        await wb.xlsx.load(fileBuffer as unknown as Parameters<typeof wb.xlsx.load>[0]);
+      }
     } catch {
-      throw new ValidationError('File is not a valid .xlsx workbook');
+      throw new ValidationError('File is not a valid .xlsx or .csv file');
     }
     const sheet = wb.worksheets[0];
     if (!sheet) throw new ValidationError('Workbook has no sheet');
@@ -84,10 +124,12 @@ export class ImportExportService {
     }
 
     const totalRows = sheet.rowCount - 1;
-    if (totalRows > MAX_ROWS) throw new ValidationError(`At most ${MAX_ROWS} rows per import`);
+    const maxRows = options.maxRows ?? MAX_ROWS;
+    if (totalRows > maxRows) throw new ValidationError(`At most ${maxRows} rows per import`);
 
     const jobId = uuidv7();
     const errors: { row: number; message: string }[] = [];
+    const previewRows: ImportPreviewRow[] = [];
     let createdProducts = 0;
     let createdVariants = 0;
     let updatedVariants = 0;
@@ -98,6 +140,14 @@ export class ImportExportService {
       if (row.values == null || (row.values as unknown[]).length === 0) continue;
       const values = readRow(row, colIndex);
       if (!values.productCode && !values.sku) continue; // blank row
+      const preview = {
+        row: r,
+        sku: values.sku,
+        productName: values.productName,
+        aliasName: values.variantName,
+        description: values.description,
+        properties: values.optionValues.replace(/;/g, ', '),
+      };
       try {
         const result = await this.importRow(tx, principal, productIdByCode, values);
         if (result === 'product+variant') {
@@ -105,18 +155,48 @@ export class ImportExportService {
           createdVariants++;
         } else if (result === 'variant') createdVariants++;
         else updatedVariants++;
+        const note =
+          result === 'product+variant'
+            ? 'จะสร้างสินค้าใหม่'
+            : result === 'variant'
+              ? 'จะเพิ่ม SKU ใหม่ในสินค้าเดิม'
+              : 'จะอัปเดต SKU ที่มีอยู่แล้ว';
+        previewRows.push({ ...preview, status: 'success', note });
       } catch (err) {
-        errors.push({ row: r, message: err instanceof Error ? err.message : 'Unknown error' });
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        errors.push({ row: r, message });
+        previewRows.push({ ...preview, status: 'error', note: message });
       }
     }
 
     const status = errors.length === totalRows && totalRows > 0 ? 'FAILED' : 'COMPLETED';
+    if (options.dryRun) {
+      throw new DryRunAbort({
+        id: null,
+        status,
+        totalRows,
+        createdProducts,
+        createdVariants,
+        updatedVariants,
+        errors,
+        rows: previewRows,
+      });
+    }
     await sql`insert into import_jobs (tenant_id, id, type, status, file_name, total_rows, created_products,
                                        created_variants, updated_variants, errors, created_by, completed_at)
               values (${principal.tenantId}, ${jobId}, 'PRODUCT_IMPORT', ${status}, ${fileName ?? null},
                       ${totalRows}, ${createdProducts}, ${createdVariants}, ${updatedVariants},
                       ${JSON.stringify(errors)}::jsonb, ${principal.membershipId}, now())`.execute(tx);
-    return { id: jobId, status, totalRows, createdProducts, createdVariants, updatedVariants, errors };
+    return {
+      id: jobId,
+      status,
+      totalRows,
+      createdProducts,
+      createdVariants,
+      updatedVariants,
+      errors,
+      rows: previewRows,
+    };
   }
 
   async getJob(tx: Tx, principal: Principal, id: string): Promise<ImportJob> {
@@ -142,6 +222,7 @@ export class ImportExportService {
       createdVariants: row.created_variants,
       updatedVariants: row.updated_variants,
       errors: row.errors,
+      rows: [], // per-row detail is not persisted; only `importXlsx`'s own live response has it
     };
   }
 
@@ -150,6 +231,7 @@ export class ImportExportService {
     const { rows } = await sql<{
       product_code: string;
       product_name: string;
+      description: string | null;
       brand_name: string | null;
       base_unit_code: string;
       sku: string;
@@ -160,8 +242,9 @@ export class ImportExportService {
       status: string;
       barcode: string | null;
     }>`
-      select p.code as product_code, p.name as product_name, b.name as brand_name, u.code as base_unit_code,
-             v.sku, v.name as variant_name, v.option_values, v.cost_price, v.selling_price, v.status,
+      select p.code as product_code, p.name as product_name, p.description, b.name as brand_name,
+             u.code as base_unit_code, v.sku, v.name as variant_name, v.option_values, v.cost_price,
+             v.selling_price, v.status,
              (select barcode from variant_barcodes where variant_id = v.id order by is_primary desc limit 1) as barcode
         from product_variants v
         join products p on p.id = v.product_id
@@ -177,6 +260,7 @@ export class ImportExportService {
       sheet.addRow([
         r.product_code,
         r.product_name,
+        r.description ?? '',
         r.brand_name ?? '',
         r.base_unit_code,
         r.sku,
@@ -234,6 +318,7 @@ export class ImportExportService {
           code: row.productCode,
           name: row.productName,
           baseUnitId: unitId,
+          ...(row.description ? { description: row.description } : {}),
           ...(brandId ? { brandId } : {}),
           variants: [
             {

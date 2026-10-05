@@ -83,11 +83,17 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   return (await res.json()) as T;
 }
 
-/** Upload a raw binary body (e.g. an .xlsx catalog import) and parse the JSON response. */
-export async function apiUpload<T>(path: string, data: ArrayBuffer): Promise<T> {
+/** Upload a raw binary body (e.g. a catalog import file) and parse the JSON response. `fileName`
+ *  (percent-encoded — a raw header value can't carry non-ASCII, and Thai file names are common
+ *  here) lets the API tell an .xlsx upload apart from a .csv one. */
+export async function apiUpload<T>(path: string, data: ArrayBuffer, fileName?: string): Promise<T> {
   const res = await fetch(`/api/proxy${path}`, {
     method: 'POST',
-    headers: { 'x-stockos-csrf': '1', 'content-type': 'application/octet-stream' },
+    headers: {
+      'x-stockos-csrf': '1',
+      'content-type': 'application/octet-stream',
+      ...(fileName ? { 'x-file-name': encodeURIComponent(fileName) } : {}),
+    },
     body: data,
     credentials: 'same-origin',
     cache: 'no-store',

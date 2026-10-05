@@ -144,7 +144,7 @@ export function PageHeader({
   actions,
   breadcrumb,
 }: {
-  title: string;
+  title: ReactNode;
   description?: string;
   actions?: ReactNode;
   breadcrumb?: Crumb[];

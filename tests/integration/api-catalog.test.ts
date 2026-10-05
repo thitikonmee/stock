@@ -471,6 +471,95 @@ describe('bulk import / export', () => {
     });
     expect(res.body).toMatchObject({ status: 'COMPLETED', createdProducts: 1, errors: [{ row: 2 }] });
   });
+
+  it('previews a spreadsheet (per-row success/error detail) without creating anything', async () => {
+    const tag = Date.now();
+    const code = `PRV-${tag}`;
+    const wb = new ExcelJS.Workbook();
+    const sheet = wb.addWorksheet('Products');
+    sheet.addRow(['productCode', 'productName', 'description', 'baseUnitCode', 'sku', 'optionValues']);
+    sheet.addRow([code, 'Preview Product', 'คำอธิบายสินค้า', 'PCS', `${code}-SKU`, 'Color=Black;Size=41']);
+    sheet.addRow(['BAD', 'Bad Row', '', 'NOT-A-UNIT', `${code}-BAD`, '']); // unknown unit -> error row
+    const buffer = Buffer.from((await wb.xlsx.writeBuffer()) as unknown as ArrayBuffer);
+
+    const preview = await call(api, 'POST', '/api/v1/products/import/preview', {
+      token: t.accessToken,
+      headers: { 'content-type': 'application/octet-stream', 'x-file-name': 'preview.xlsx' },
+      body: buffer as unknown as Record<string, unknown>,
+    });
+    expect(preview, JSON.stringify(preview.body)).toMatchObject({
+      status: 200,
+      body: {
+        id: null,
+        totalRows: 2,
+        createdProducts: 1,
+        rows: [
+          {
+            row: 2,
+            status: 'success',
+            sku: `${code}-SKU`,
+            productName: 'Preview Product',
+            description: 'คำอธิบายสินค้า',
+            properties: 'Color=Black, Size=41',
+          },
+          { row: 3, status: 'error', sku: `${code}-BAD` },
+        ],
+      },
+    });
+
+    // A dry run must never actually create the product.
+    const lookup = await call(api, 'GET', '/api/v1/products', { token: t.accessToken });
+    expect(lookup.body.data.find((p: { code: string }) => p.code === code)).toBeUndefined();
+
+    // The same file can still be committed for real afterwards.
+    const committed = await call(api, 'POST', '/api/v1/products/import', {
+      token: t.accessToken,
+      headers: { 'content-type': 'application/octet-stream', 'x-file-name': 'preview.xlsx' },
+      body: buffer as unknown as Record<string, unknown>,
+    });
+    expect(committed.body).toMatchObject({ createdProducts: 1, errors: [{ row: 3 }] });
+    const after = await call(api, 'GET', '/api/v1/products', { token: t.accessToken });
+    expect(after.body.data.find((p: { code: string }) => p.code === code)).toBeTruthy();
+  });
+
+  it('rejects a preview over the 1,000-row cap, even though a real import allows more', async () => {
+    const wb = new ExcelJS.Workbook();
+    const sheet = wb.addWorksheet('Products');
+    sheet.addRow(['productCode', 'productName', 'baseUnitCode', 'sku']);
+    for (let i = 0; i < 1001; i++) {
+      sheet.addRow([`CAP-${Date.now()}-${i}`, `Cap Product ${i}`, 'PCS', `CAP-${Date.now()}-${i}-SKU`]);
+    }
+    const buffer = Buffer.from((await wb.xlsx.writeBuffer()) as unknown as ArrayBuffer);
+    const res = await call(api, 'POST', '/api/v1/products/import/preview', {
+      token: t.accessToken,
+      headers: { 'content-type': 'application/octet-stream' },
+      body: buffer as unknown as Record<string, unknown>,
+    });
+    expect(res).toMatchObject({ status: 400, body: { code: 'VALIDATION_FAILED' } });
+  });
+
+  it('imports a CSV file without corrupting numeric-looking SKUs', async () => {
+    const tag = Date.now();
+    const code = `CSV-${tag}`;
+    const sku = `007-${tag}`; // a leading-zero, numeric-looking SKU — must survive as text
+    const csv = ['productCode,productName,baseUnitCode,sku', `${code},CSV Product,PCS,${sku}`].join('\n');
+
+    const res = await call(api, 'POST', '/api/v1/products/import', {
+      token: t.accessToken,
+      headers: { 'content-type': 'application/octet-stream', 'x-file-name': 'products.csv' },
+      body: Buffer.from(csv, 'utf8') as unknown as Record<string, unknown>,
+    });
+    expect(res, JSON.stringify(res.body)).toMatchObject({
+      status: 201,
+      body: { status: 'COMPLETED', createdProducts: 1, errors: [] },
+    });
+
+    const products = await call(api, 'GET', '/api/v1/products', { token: t.accessToken });
+    const product = products.body.data.find((p: { code: string }) => p.code === code);
+    expect(product).toBeTruthy();
+    const detail = await call(api, 'GET', `/api/v1/products/${product.id}`, { token: t.accessToken });
+    expect(detail.body.variants[0].sku).toBe(sku);
+  });
 });
 
 describe('plan limits', () => {

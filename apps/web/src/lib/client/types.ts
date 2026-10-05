@@ -224,14 +224,26 @@ export interface SupplierProduct {
   isPreferred: boolean;
 }
 
+export interface ImportPreviewRow {
+  row: number;
+  status: 'success' | 'error';
+  note: string;
+  sku: string;
+  productName: string;
+  aliasName: string;
+  description: string;
+  properties: string;
+}
+
 export interface ImportJob {
-  id: string;
+  id: string | null;
   status: 'PROCESSING' | 'COMPLETED' | 'FAILED';
   totalRows: number;
   createdProducts: number;
   createdVariants: number;
   updatedVariants: number;
   errors: { row: number; message: string }[];
+  rows: ImportPreviewRow[];
 }
 
 export interface BundleComponent {

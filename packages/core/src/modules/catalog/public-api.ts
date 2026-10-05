@@ -34,7 +34,12 @@ export {
   type SupplierProduct,
 } from './application/supplier-service';
 export { PriceService, type Price, type PriceList, type PriceListInput } from './application/price-service';
-export { ImportExportService, type ImportJob } from './application/import-export-service';
+export {
+  ImportExportService,
+  DryRunAbort,
+  type ImportJob,
+  type ImportPreviewRow,
+} from './application/import-export-service';
 export { renderLabelSheet, type LabelItem } from './application/label-service';
 export {
   assertValidBarcode,

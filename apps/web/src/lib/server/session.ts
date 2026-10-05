@@ -63,7 +63,14 @@ export function clearSessionCookies(res: NextResponse): void {
 /** Headers forwarded to the API: client IP (per-IP rate limits), request id, conditional updates. */
 export function forwardedHeaders(req: Request, extra: Record<string, string> = {}): Record<string, string> {
   const headers: Record<string, string> = { ...extra };
-  for (const name of ['content-type', 'if-match', 'idempotency-key', 'x-request-id', 'user-agent']) {
+  for (const name of [
+    'content-type',
+    'if-match',
+    'idempotency-key',
+    'x-request-id',
+    'user-agent',
+    'x-file-name',
+  ]) {
     const value = req.headers.get(name);
     if (value) headers[name] = value;
   }
