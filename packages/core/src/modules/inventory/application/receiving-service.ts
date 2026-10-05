@@ -1,17 +1,10 @@
 import ExcelJS from 'exceljs';
 import { sql } from 'kysely';
 import type { Tx } from '@stockos/database';
-import {
-  Dec,
-  ValidationError,
-  formatCost,
-  formatQuantity,
-  toCost,
-  toQuantity,
-  uuidv7,
-} from '@stockos/shared';
+import { ValidationError, formatCost, formatQuantity, toCost, toQuantity, uuidv7 } from '@stockos/shared';
 import { recordAudit } from '../../audit/public-api';
 import { assertCan, type Principal } from '../../iam/public-api';
+import { applyMovingAverage } from '../infrastructure/cost-repository';
 import { InventoryEngine } from './inventory-engine';
 
 export interface ReceiveLine {
@@ -66,7 +59,7 @@ export class ReceivingService {
     if (!result.replayed) {
       for (const line of input.lines) {
         if (line.unitCost)
-          await this.applyMovingAverage(tx, principal.tenantId, line.variantId, line.quantity, line.unitCost);
+          await applyMovingAverage(tx, principal.tenantId, line.variantId, line.quantity, line.unitCost);
       }
     }
     await recordAudit(tx, {
@@ -152,8 +145,7 @@ export class ReceivingService {
             },
           ],
         });
-        if (unitCostRaw)
-          await this.applyMovingAverage(tx, principal.tenantId, vRows[0].id, quantity, unitCostRaw);
+        if (unitCostRaw) await applyMovingAverage(tx, principal.tenantId, vRows[0].id, quantity, unitCostRaw);
         applied++;
       } catch (err) {
         errors.push({ row: r, message: err instanceof Error ? err.message : 'Unknown error' });
@@ -175,32 +167,5 @@ export class ReceivingService {
     sheet.addRow([...HEADERS]);
     sheet.addRow(['MAIN', 'SKU-001', '10', '150']);
     return wb.xlsx.writeBuffer() as unknown as Promise<Uint8Array>;
-  }
-
-  /** Weighted moving average: new_avg = (qty_basis·avg_cost + received_qty·unit_cost) / (qty_basis+received_qty). */
-  private async applyMovingAverage(
-    tx: Tx,
-    tenantId: string,
-    variantId: string,
-    receivedQty: string,
-    unitCost: string,
-  ): Promise<void> {
-    const cost = toCost(unitCost);
-    const qty = toQuantity(receivedQty);
-    const { rows } = await sql<{ avg_cost: string; qty_basis: string }>`
-      select avg_cost, qty_basis from variant_costs where tenant_id = ${tenantId} and variant_id = ${variantId}
-      for update`.execute(tx);
-    const current = rows[0] ?? { avg_cost: '0', qty_basis: '0' };
-    const currentBasis = new Dec(current.qty_basis);
-    const newBasis = currentBasis.plus(qty);
-    const newAvg = newBasis.isZero()
-      ? cost
-      : currentBasis.times(current.avg_cost).plus(qty.times(cost)).dividedBy(newBasis);
-
-    await sql`insert into variant_costs (tenant_id, variant_id, avg_cost, qty_basis, last_cost, updated_at)
-              values (${tenantId}, ${variantId}, ${formatCost(newAvg)}, ${formatQuantity(newBasis)}, ${formatCost(cost)}, now())
-              on conflict (tenant_id, variant_id) do update set
-                avg_cost = excluded.avg_cost, qty_basis = excluded.qty_basis, last_cost = excluded.last_cost,
-                updated_at = now()`.execute(tx);
   }
 }

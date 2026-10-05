@@ -376,6 +376,7 @@ export class OrderIngestService {
         referenceId: orderId,
         idempotencyKey: `order:${orderId}:reserve:${line.variantId}`,
         channelCode: account.channelCode,
+        channelAccountId: account.id,
         ttlSeconds: 24 * 3600, // platform, not our checkout, owns the cancel window — long TTL, polling/webhook will move it on
         items: [{ warehouseId, variantId: line.variantId!, quantity: line.quantity }],
       });

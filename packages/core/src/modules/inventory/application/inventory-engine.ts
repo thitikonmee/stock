@@ -92,6 +92,7 @@ export class InventoryEngine {
       guardQuantity: line.effect.guardQuantity,
       minRemaining,
       allowNegative: cmd.allowNegative ?? false,
+      channelAccountId: cmd.channelAccountId,
     };
 
     let outcome = await applyBalanceDelta(tx, request);

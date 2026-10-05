@@ -14,6 +14,7 @@ import {
   notifications,
   orders,
   pos,
+  purchasing,
   tenancy,
 } from '@stockos/core';
 import { PgRateLimiter, type Db } from '@stockos/database';
@@ -41,6 +42,7 @@ import {
   ChannelsController,
 } from './channels/channels.controller';
 import { WebhooksController } from './channels/webhooks.controller';
+import { ChannelAllocationsController } from './channels/allocations.controller';
 import { HealthController } from './health/health.controller';
 import { BillingController, NotificationsController } from './iam/account.controllers';
 import { ApiKeysController } from './iam/api-keys.controller';
@@ -52,6 +54,9 @@ import { InventoryQueryController } from './inventory/query.controller';
 import { ReceivingController } from './inventory/receiving.controller';
 import { ReconciliationController } from './inventory/reconciliation.controller';
 import { ReservationsController } from './inventory/reservations.controller';
+import { TransfersController } from './inventory/transfers.controller';
+import { CountsController } from './inventory/counts.controller';
+import { LocationsController } from './inventory/locations.controller';
 import { PosDeviceSessionController, PosDevicesController } from './org/devices.controller';
 import { BranchesController, WarehousesController } from './org/org.controllers';
 import { FulfillmentsController, ReturnsController } from './orders/fulfillments.controller';
@@ -59,6 +64,7 @@ import { OrdersController } from './orders/orders.controller';
 import { PosSessionsController } from './pos/sessions.controller';
 import { ShiftsController } from './pos/shifts.controller';
 import { SalesController } from './pos/sales.controller';
+import { PurchasesController, SupplierPerformanceController } from './purchasing/purchases.controller';
 import {
   API_BASE_URL,
   DB,
@@ -132,6 +138,11 @@ interface Services {
   inventoryQueryService: inventory.InventoryQueryService;
   reservationService: inventory.ReservationService;
   adjustmentService: inventory.AdjustmentService;
+  purchaseService: purchasing.PurchaseService;
+  transferService: inventory.TransferService;
+  countService: inventory.CountService;
+  locationService: inventory.LocationService;
+  allocationService: channels.AllocationService;
   receivingService: inventory.ReceivingService;
   reconciliationService: inventory.ReconciliationService;
   posPinService: iam.PosPinService;
@@ -188,6 +199,12 @@ class AppModule {
         AdjustmentsController,
         ReceivingController,
         ReconciliationController,
+        PurchasesController,
+        TransfersController,
+        CountsController,
+        LocationsController,
+        ChannelAllocationsController,
+        SupplierPerformanceController,
         CustomersController,
         PosSessionsController,
         ShiftsController,
@@ -230,6 +247,11 @@ class AppModule {
         { provide: inventory.InventoryQueryService, useValue: services.inventoryQueryService },
         { provide: inventory.ReservationService, useValue: services.reservationService },
         { provide: inventory.AdjustmentService, useValue: services.adjustmentService },
+        { provide: purchasing.PurchaseService, useValue: services.purchaseService },
+        { provide: inventory.TransferService, useValue: services.transferService },
+        { provide: inventory.CountService, useValue: services.countService },
+        { provide: inventory.LocationService, useValue: services.locationService },
+        { provide: channels.AllocationService, useValue: services.allocationService },
         { provide: inventory.ReceivingService, useValue: services.receivingService },
         { provide: inventory.ReconciliationService, useValue: services.reconciliationService },
         { provide: iam.PosPinService, useValue: services.posPinService },
@@ -343,6 +365,11 @@ export async function createApp(deps: AppDeps): Promise<NestFastifyApplication> 
     inventoryQueryService,
     reservationService,
     adjustmentService: new inventory.AdjustmentService(),
+    purchaseService: new purchasing.PurchaseService(),
+    transferService: new inventory.TransferService(),
+    countService: new inventory.CountService(),
+    locationService: new inventory.LocationService(),
+    allocationService: new channels.AllocationService(),
     receivingService: new inventory.ReceivingService(),
     reconciliationService: new inventory.ReconciliationService(),
     posPinService,

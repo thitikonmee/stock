@@ -38,6 +38,8 @@ export interface ApplyDeltaInput {
   guardQuantity: Dec;
   minRemaining: Dec;
   allowNegative: boolean;
+  /** The channel account acting, if any: its own CHANNEL_ALLOCATION quota is usable, others' are not. */
+  channelAccountId?: string | undefined;
 }
 
 export type ApplyDeltaOutcome =
@@ -88,7 +90,15 @@ function guardSql(input: ApplyDeltaInput): RawBuilder<unknown> {
     case 'NONE':
       return sql`true`;
     case 'AVAILABLE':
-      return sql`(b.on_hand - b.reserved - b.committed - ${formatQuantity(input.minRemaining)}::numeric >= ${qty}::numeric
+      // Stock allocated to *other* channel accounts (docs/04-inventory.md §8 CHANNEL_ALLOCATION) is
+      // off limits: POS, manual orders and other channels sell only from the unallocated remainder
+      // plus, for a channel, its own remaining quota.
+      return sql`(b.on_hand - b.reserved - b.committed - ${formatQuantity(input.minRemaining)}::numeric
+                  - coalesce((select sum(a.allocated_qty - a.consumed_qty) from channel_allocations a
+                               where a.tenant_id = b.tenant_id and a.warehouse_id = b.warehouse_id
+                                 and a.variant_id = b.variant_id
+                                 and a.channel_account_id is distinct from ${input.channelAccountId ?? null}::uuid), 0)
+                  >= ${qty}::numeric
                   or ${negativeOk})`;
     case 'BUCKET': {
       const column = sql.ref(`b.${COLUMN[input.guard.bucket]}`);

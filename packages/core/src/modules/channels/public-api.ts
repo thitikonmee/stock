@@ -21,7 +21,13 @@ export type {
   StockUpdateResult,
   WebhookVerification,
 } from './domain/channel-adapter';
-export { computeSellable, DEFAULT_STOCK_POLICY, type StockPolicy } from './domain/stock-policy';
+export {
+  computeAccountSellable,
+  computeSellable,
+  DEFAULT_STOCK_POLICY,
+  type QuotaPosition,
+  type StockPolicy,
+} from './domain/stock-policy';
 export type {
   CallbackInput,
   ChannelAccount,
@@ -51,6 +57,11 @@ export { ReconciliationService } from './application/reconciliation-service';
 export { WebhookService, type WebhookHandleResult } from './application/webhook-service';
 export { WebhookQueryService } from './application/webhook-query-service';
 export { SyncJobService } from './application/sync-job-service';
+export {
+  AllocationService,
+  type AllocationLineInput,
+  type ChannelAllocation,
+} from './application/allocation-service';
 export { loadChannelAccount } from './application/account-repository';
 
 export { ShopeeAdapter, type ShopeeConfig } from './adapters/shopee/shopee-adapter';

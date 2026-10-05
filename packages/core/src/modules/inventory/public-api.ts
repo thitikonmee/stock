@@ -5,7 +5,7 @@ export { BUCKETS, LEDGER_TRANSACTION_TYPES, OPERATIONS, isOperation } from './do
 export type { Bucket, Operation, OperationSpec } from './domain/operations';
 export type { BalanceSnapshot, MovementCommand, MovementLineInput, MovementResult } from './domain/types';
 export { readBalances, syncNegativeStockPolicy } from './infrastructure/balance-repository';
-export { readAvgCost } from './infrastructure/cost-repository';
+export { applyMovingAverage, readAvgCost } from './infrastructure/cost-repository';
 
 export {
   InventoryQueryService,
@@ -46,3 +46,31 @@ export {
   type ReconciliationRun,
 } from './application/reconciliation-service';
 export type { BucketDiff } from './infrastructure/rebuild-repository';
+export {
+  TransferService,
+  type CreateTransferInput,
+  type Transfer,
+  type TransferItem,
+  type TransferQtyLine,
+  type TransferReceiveLine,
+  type TransferStatus,
+} from './application/transfer-service';
+export {
+  CountService,
+  type CountItem,
+  type CountLineInput,
+  type CountStatus,
+  type CountType,
+  type CreateCountInput,
+  type StockCount,
+} from './application/count-service';
+export {
+  LocationService,
+  type CreateLocationInput,
+  type LocationDiscrepancy,
+  type LocationLevel,
+  type LocationMoveLine,
+  type LocationStock,
+  type PickSuggestion,
+  type WarehouseLocation,
+} from './application/location-service';

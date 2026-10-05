@@ -87,6 +87,28 @@ const VALID_BODY: Record<string, unknown> = {
     warehouseId: '00000000-0000-7000-8000-000000000000',
   },
   'PUT /api/v1/channel-mappings/:id': { variantId: null },
+  'POST /api/v1/purchases/:id/receipts': {
+    lines: [{ purchaseItemId: '00000000-0000-7000-8000-000000000000', quantity: '1' }],
+  },
+  'POST /api/v1/inventory/transfers/:id/receive': {
+    lines: [{ itemId: '00000000-0000-7000-8000-000000000000', receivedQty: '1' }],
+  },
+  'POST /api/v1/inventory/counts/:id/lines': {
+    lines: [{ variantId: '00000000-0000-7000-8000-000000000000', quantity: '1' }],
+  },
+  'POST /api/v1/warehouses/:id/locations': { level: 'ZONE', code: 'ZX' },
+  'POST /api/v1/warehouses/:id/locations/moves': {
+    lines: [
+      {
+        variantId: '00000000-0000-7000-8000-000000000000',
+        quantity: '1',
+        toLocationId: '00000000-0000-7000-8000-000000000000',
+      },
+    ],
+  },
+  'PUT /api/v1/channel-accounts/:id/allocations': {
+    lines: [{ variantId: '00000000-0000-7000-8000-000000000000', allocatedQty: '1' }],
+  },
 };
 
 type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -307,6 +329,42 @@ describe('access policy coverage (generated from every registered route)', () =>
       })
     ).body;
 
+    const purchase = (
+      await call(api, 'POST', '/api/v1/purchases', {
+        token: a.accessToken,
+        body: {
+          supplierId: supplier.id,
+          warehouseId: warehouse.id,
+          items: [{ variantId: variant.id, orderedQty: '1', unitCost: '1' }],
+        },
+      })
+    ).body;
+    expect(purchase.id).toBeTruthy();
+    const secondWarehouse = (
+      await call(api, 'POST', '/api/v1/warehouses', {
+        token: a.accessToken,
+        body: { code: 'WH2', name: 'Second', branchId: branch.id },
+      })
+    ).body;
+    const transfer = (
+      await call(api, 'POST', '/api/v1/inventory/transfers', {
+        token: a.accessToken,
+        body: {
+          fromWarehouseId: warehouse.id,
+          toWarehouseId: secondWarehouse.id,
+          items: [{ variantId: variant.id, quantity: '1' }],
+        },
+      })
+    ).body;
+    expect(transfer.id).toBeTruthy();
+    const count = (
+      await call(api, 'POST', '/api/v1/inventory/counts', {
+        token: a.accessToken,
+        body: { warehouseId: warehouse.id, countType: 'SPOT', variantIds: [variant.id] },
+      })
+    ).body;
+    expect(count.id).toBeTruthy();
+
     // Resource of tenant A for each route prefix; a new :id route must be added here.
     const idOfA: Record<string, string> = {
       '/api/v1/branches/:id': branch.id,
@@ -378,6 +436,34 @@ describe('access policy coverage (generated from every registered route)', () =>
       '/api/v1/channel-mappings/:id': channelMapping.id,
       '/api/v1/reconciliation-runs/:id': reconciliationRunChannel.id,
       '/api/v1/reconciliation-runs/:id/items': reconciliationRunChannel.id,
+      '/api/v1/purchases/:id': purchase.id,
+      '/api/v1/purchases/:id/submit': purchase.id,
+      '/api/v1/purchases/:id/approve': purchase.id,
+      '/api/v1/purchases/:id/reject': purchase.id,
+      '/api/v1/purchases/:id/send': purchase.id,
+      '/api/v1/purchases/:id/cancel': purchase.id,
+      '/api/v1/purchases/:id/close': purchase.id,
+      '/api/v1/purchases/:id/receipts': purchase.id,
+      '/api/v1/suppliers/:id/performance': supplier.id,
+      '/api/v1/inventory/transfers/:id': transfer.id,
+      '/api/v1/inventory/transfers/:id/approve': transfer.id,
+      '/api/v1/inventory/transfers/:id/ship': transfer.id,
+      '/api/v1/inventory/transfers/:id/receive': transfer.id,
+      '/api/v1/inventory/transfers/:id/complete': transfer.id,
+      '/api/v1/inventory/transfers/:id/cancel': transfer.id,
+      '/api/v1/inventory/counts/:id': count.id,
+      '/api/v1/inventory/counts/:id/lines': count.id,
+      '/api/v1/inventory/counts/:id/submit': count.id,
+      '/api/v1/inventory/counts/:id/recount': count.id,
+      '/api/v1/inventory/counts/:id/approve': count.id,
+      '/api/v1/inventory/counts/:id/cancel': count.id,
+      '/api/v1/warehouses/:id/locations': warehouse.id,
+      '/api/v1/warehouses/:id/locations/:locationId': warehouse.id,
+      '/api/v1/warehouses/:id/locations/stock': warehouse.id,
+      '/api/v1/warehouses/:id/locations/moves': warehouse.id,
+      '/api/v1/warehouses/:id/locations/pick-suggestions': warehouse.id,
+      '/api/v1/warehouses/:id/locations/discrepancies': warehouse.id,
+      '/api/v1/channel-accounts/:id/allocations': channelAccountId,
     };
 
     const withId = routes().filter((r) => r.url.includes(':id'));

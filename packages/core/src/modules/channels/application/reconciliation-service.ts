@@ -3,7 +3,8 @@ import type { Tx } from '@stockos/database';
 import { Dec, NotFoundError, uuidv7 } from '@stockos/shared';
 import { assertCan, systemPrincipal, type Principal } from '../../iam/public-api';
 import type { InventoryQueryService } from '../../inventory/public-api';
-import { computeSellable } from '../domain/stock-policy';
+import { computeAccountSellable } from '../domain/stock-policy';
+import { readQuotaPosition } from './allocation-service';
 import type { ReconciliationItemRow, ReconciliationRunRow } from '../domain/types';
 import type { AdapterRegistry } from './adapter-registry';
 import type { TokenManager } from './token-manager';
@@ -76,7 +77,10 @@ export class ReconciliationService {
           warehouseId: account.defaultWarehouseId,
         });
         const policy = await this.policies.resolveEffective(tx, channelAccountId, row.variant_id);
-        const expected = computeSellable(balance.data[0]?.available ?? '0', policy);
+        const quota = account.defaultWarehouseId
+          ? await readQuotaPosition(tx, channelAccountId, account.defaultWarehouseId, row.variant_id)
+          : { ownRemaining: null, othersRemaining: '0' };
+        const expected = computeAccountSellable(balance.data[0]?.available ?? '0', policy, quota);
         const actualQty = actualByKey.get(`${row.external_item_id}\u0000${row.external_variant_id}`) ?? null;
         const diff = actualQty === null ? null : new Dec(actualQty).minus(expected).toFixed(3);
         if (diff !== null && !new Dec(diff).isZero()) mismatches++;

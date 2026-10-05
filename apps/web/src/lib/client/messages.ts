@@ -29,7 +29,7 @@ const MESSAGES: Record<string, string> = {
   REFUND_EXCEEDS_PAYMENT: 'ยอดคืนเงินเกินยอดที่ชำระไว้',
   DEVICE_NOT_ACTIVE: 'เครื่องนี้ยังไม่ได้ลงทะเบียน หรือถูกปิดใช้งาน',
   VARIANT_NOT_SELLABLE: 'สินค้านี้ขายไม่ได้ในขณะนี้',
-  INVALID_STATE_TRANSITION: 'ทำรายการนี้ไม่ได้กับสถานะปัจจุบันของออเดอร์',
+  INVALID_STATE_TRANSITION: 'ทำรายการนี้ไม่ได้กับสถานะปัจจุบันของเอกสาร',
   ORDER_NOT_FULFILLABLE: 'ออเดอร์ยังไม่พร้อมสำหรับการจัดส่ง',
   OVER_FULFILL: 'จำนวนที่จัดส่งเกินกว่าที่เหลืออยู่ในออเดอร์',
   OVER_RETURN: 'จำนวนที่ขอคืนเกินกว่าที่จัดส่งไปแล้ว',
@@ -40,6 +40,13 @@ const MESSAGES: Record<string, string> = {
   DISCOUNT_EXCEEDS_LINE: 'ส่วนลดเกินยอดของรายการนี้',
   CHANNEL_NOT_CONNECTED: 'ยังไม่ได้เชื่อมต่อช่องทางนี้',
   CHANNEL_DISCONNECTED: 'ช่องทางนี้ถูกยกเลิกการเชื่อมต่อไปแล้ว',
+  OVER_RECEIVE: 'จำนวนที่รับเกินกว่าที่ค้างรับ/อยู่ระหว่างขนส่ง',
+  OVER_ALLOCATED: 'โควต้ารวมเกินสต็อกที่ว่างให้จัดสรร',
+  ALLOCATION_BELOW_CONSUMED: 'ตั้งโควต้าต่ำกว่าที่ร้านนี้ขายไปแล้วไม่ได้',
+  LOCATION_STOCK_INSUFFICIENT: 'สต็อกในตำแหน่งนี้ (หรือที่ยังไม่จัดเก็บ) ไม่พอ',
+  LOCATION_NOT_EMPTY: 'ต้องย้ายสินค้าออกจากตำแหน่งนี้ก่อนปิดใช้งาน',
+  IDEMPOTENCY_KEY_REUSED: 'คำขอนี้ซ้ำกับรายการอื่น กรุณาโหลดหน้าใหม่แล้วลองอีกครั้ง',
+  ADJUSTMENT_NOT_PENDING: 'รายการนี้ไม่ได้อยู่ในสถานะรออนุมัติแล้ว',
 };
 
 export function messageFor(error: unknown): string {

@@ -41,6 +41,8 @@ export interface ReserveInput {
   ttlSeconds?: number;
   idempotencyKey: string;
   channelCode?: string;
+  /** Marketplace account the order came from: consumes its CHANNEL_ALLOCATION quota (if any). */
+  channelAccountId?: string;
 }
 
 /**
@@ -62,6 +64,7 @@ export class ReservationService {
       idempotencyKey: input.idempotencyKey,
       reference: { type: input.referenceType, id: input.referenceId },
       ...(input.channelCode ? { channelCode: input.channelCode } : {}),
+      ...(input.channelAccountId ? { channelAccountId: input.channelAccountId } : {}),
       lines: input.items.map((i) => ({
         warehouseId: i.warehouseId,
         variantId: i.variantId,
@@ -76,9 +79,10 @@ export class ReservationService {
       // reserving more against the same order line in a later call).
       const { rows: existing } = await sql<ReservationRow>`
         insert into inventory_reservations (tenant_id, id, warehouse_id, variant_id, quantity, status,
-                                            reference_type, reference_id, channel_code, expires_at)
+                                            reference_type, reference_id, channel_code, channel_account_id, expires_at)
         values (${principal.tenantId}, ${uuidv7()}, ${item.warehouseId}, ${item.variantId}, ${item.quantity},
-                'RESERVED', ${input.referenceType}, ${input.referenceId}, ${input.channelCode ?? null}, ${expiresAt})
+                'RESERVED', ${input.referenceType}, ${input.referenceId}, ${input.channelCode ?? null},
+                ${input.channelAccountId ?? null}, ${expiresAt})
         on conflict (tenant_id, reference_type, reference_id, warehouse_id, variant_id) do update
           set quantity = case when ${result.replayed} then inventory_reservations.quantity
                                else inventory_reservations.quantity + excluded.quantity end,
@@ -86,6 +90,14 @@ export class ReservationService {
               updated_at = now()
         returning ${cols}`.execute(tx);
       rows.push(toReservation(existing[0]!));
+      if (input.channelAccountId && !result.replayed) {
+        // Quota consumed up to what was allocated; anything beyond came from the unallocated pool.
+        await sql`update channel_allocations
+                     set consumed_qty = least(allocated_qty, consumed_qty + ${item.quantity}::numeric),
+                         version = version + 1, updated_at = now()
+                   where channel_account_id = ${input.channelAccountId} and warehouse_id = ${item.warehouseId}
+                     and variant_id = ${item.variantId}`.execute(tx);
+      }
     }
     return rows;
   }
@@ -97,13 +109,14 @@ export class ReservationService {
       throw new BusinessRuleError('RESERVATION_NOT_RELEASABLE', `Reservation is ${r.status}, not RESERVED`);
     }
     const qty = quantity ?? formatQuantity(new Dec(r.quantity).minus(r.releasedQty));
-    await this.engine.apply(tx, {
+    const released = await this.engine.apply(tx, {
       tenantId: principal.tenantId,
       operation: 'RELEASE',
       idempotencyKey: `reservation:${id}:release:${qty}`,
       reference: { type: r.referenceType, id: r.referenceId },
       lines: [{ warehouseId: r.warehouseId, variantId: r.variantId, quantity: qty }],
     });
+    if (!released.replayed) await refundQuota(tx, id, qty);
     return this.updateStatus(tx, id, { releasedDelta: qty, fullQty: r.quantity, terminalStatus: 'RELEASED' });
   }
 
@@ -135,13 +148,14 @@ export class ReservationService {
       throw new BusinessRuleError('RESERVATION_NOT_COMMITTED', `Reservation is ${r.status}, not COMMITTED`);
     }
     const remaining = new Dec(r.quantity).minus(r.releasedQty).minus(r.fulfilledQty);
-    await this.engine.apply(tx, {
+    const uncommitted = await this.engine.apply(tx, {
       tenantId: principal.tenantId,
       operation: 'UNCOMMIT',
       idempotencyKey: `reservation:${id}:uncommit`,
       reference: { type: r.referenceType, id: r.referenceId },
       lines: [{ warehouseId: r.warehouseId, variantId: r.variantId, quantity: formatQuantity(remaining) }],
     });
+    if (!uncommitted.replayed) await refundQuota(tx, id, formatQuantity(remaining));
     return this.updateStatus(tx, id, {
       releasedDelta: formatQuantity(remaining),
       fullQty: r.quantity,
@@ -205,13 +219,14 @@ export class ReservationService {
        for update skip locked`.execute(tx);
     for (const r of rows) {
       const remaining = formatQuantity(new Dec(r.quantity).minus(r.released_qty));
-      await this.engine.apply(tx, {
+      const expired = await this.engine.apply(tx, {
         tenantId,
         operation: 'RELEASE',
         idempotencyKey: `reservation:${r.id}:expire`,
         reference: { type: r.reference_type, id: r.reference_id },
         lines: [{ warehouseId: r.warehouse_id, variantId: r.variant_id, quantity: remaining }],
       });
+      if (!expired.replayed) await refundQuota(tx, r.id, remaining);
       await sql`update inventory_reservations set status = 'EXPIRED', released_qty = quantity where id = ${r.id}`.execute(
         tx,
       );
@@ -269,3 +284,14 @@ const toReservation = (r: ReservationRow): Reservation => ({
   referenceId: r.reference_id,
   expiresAt: r.expires_at?.toISOString() ?? null,
 });
+
+/** Gives a channel's CHANNEL_ALLOCATION quota back when its reservation is released/cancelled. */
+async function refundQuota(tx: Tx, reservationId: string, quantity: string): Promise<void> {
+  await sql`update channel_allocations a
+               set consumed_qty = greatest(a.consumed_qty - ${quantity}::numeric, 0),
+                   version = a.version + 1, updated_at = now()
+              from inventory_reservations r
+             where r.id = ${reservationId} and r.channel_account_id is not null
+               and a.channel_account_id = r.channel_account_id and a.warehouse_id = r.warehouse_id
+               and a.variant_id = r.variant_id`.execute(tx);
+}
