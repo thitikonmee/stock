@@ -419,6 +419,7 @@ describe('access policy coverage (generated from every registered route)', () =>
       '/api/v1/orders/:id/fulfillments': order.id,
       '/api/v1/fulfillments/:id/pack': fulfillment.id,
       '/api/v1/fulfillments/:id/ship': fulfillment.id,
+      '/api/v1/fulfillments/:id/pick-list': fulfillment.id,
       '/api/v1/returns/:id': orderReturn.id,
       '/api/v1/returns/:id/receive': orderReturn.id,
       '/api/v1/channel-accounts/:id': channelAccountId,

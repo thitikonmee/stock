@@ -32,7 +32,12 @@ async function stocked(qty: string): Promise<string> {
   const tag = uuidv7().slice(-8).toUpperCase();
   const product = await call(api, 'POST', '/api/v1/products', {
     token: owner.accessToken,
-    body: { code: `B-${tag}`, name: `Bin ${tag}`, baseUnitId: pcs, variants: [{ sku: `B-${tag}` }] },
+    body: {
+      code: `B-${tag}`,
+      name: `Bin ${tag}`,
+      baseUnitId: pcs,
+      variants: [{ sku: `B-${tag}`, sellingPrice: '10.00' }],
+    },
   });
   const variantId = product.body.variants[0].id as string;
   await call(api, 'POST', '/api/v1/inventory/receive', {
@@ -161,6 +166,84 @@ describe('warehouse locations', () => {
     });
     const total = stock.body.reduce((s: number, r: { onHand: string }) => s + Number(r.onHand), 0);
     expect(total).toBe(10);
+  });
+
+  async function binStock(v: string): Promise<Record<string, string>> {
+    const res = await call(api, 'GET', `/api/v1/warehouses/${wh}/locations/stock?variantId=${v}`, {
+      token: clerk.accessToken,
+    });
+    return Object.fromEntries(
+      res.body.map((s: { fullCode: string; onHand: string }) => [s.fullCode, s.onHand]),
+    );
+  }
+
+  it('shipping an order takes stock from the bins its pick list named', async () => {
+    const v = await stocked('10');
+    await move([{ variantId: v, quantity: '6', toLocationId: binA }]);
+    await move([{ variantId: v, quantity: '3', toLocationId: binB }]); // 1 left unlocated
+
+    const order = await call(api, 'POST', '/api/v1/orders', {
+      token: owner.accessToken,
+      headers: { 'idempotency-key': uuidv7() },
+      body: { channelCode: 'API', warehouseId: wh, paid: true, lines: [{ variantId: v, quantity: '7' }] },
+    });
+    expect(order.status, JSON.stringify(order.body)).toBe(201);
+    await call(api, 'POST', `/api/v1/orders/${order.body.id}/confirm`, { token: owner.accessToken });
+    const f = await call(api, 'POST', `/api/v1/orders/${order.body.id}/fulfillments`, {
+      token: owner.accessToken,
+      headers: { 'idempotency-key': uuidv7() },
+      body: { lines: [{ orderItemId: order.body.lines[0].id, quantity: '7' }] },
+    });
+    expect(f.status, JSON.stringify(f.body)).toBe(201);
+
+    const pick = await call(api, 'GET', `/api/v1/fulfillments/${f.body.id}/pick-list`, {
+      token: clerk.accessToken,
+    });
+    expect(pick.body).toMatchObject({
+      useLocations: true,
+      lines: [
+        {
+          variantId: v,
+          quantity: '7.000',
+          suggestions: [
+            { fullCode: 'A-01-03-1', quantity: '6.000' },
+            { fullCode: 'A-01-03-2', quantity: '1.000' },
+          ],
+          shortfall: '0.000',
+        },
+      ],
+    });
+
+    const shipped = await call(api, 'POST', `/api/v1/fulfillments/${f.body.id}/ship`, {
+      token: owner.accessToken,
+      body: {},
+    });
+    expect(shipped.status, JSON.stringify(shipped.body)).toBe(201);
+    expect(await binStock(v)).toEqual({ 'A-01-03-2': '2.000' }); // bin 1 emptied, bin 2 gave 1
+  });
+
+  it('a loss uses unlocated stock first and only trims bins when it must', async () => {
+    const approver = await addMember(api, owner, [{ roleCode: 'MANAGER' }]);
+    const v = await stocked('5');
+    await move([{ variantId: v, quantity: '3', toLocationId: binA }]); // 2 unlocated
+
+    const lose = async (qty: string) => {
+      const adj = await call(api, 'POST', '/api/v1/inventory/adjustments', {
+        token: owner.accessToken,
+        body: { warehouseId: wh, reasonCode: 'LOST', items: [{ variantId: v, quantityDelta: `-${qty}` }] },
+      });
+      expect(adj.status, JSON.stringify(adj.body)).toBe(201);
+      const ok = await call(api, 'POST', `/api/v1/inventory/adjustments/${adj.body.id}/approve`, {
+        token: approver.accessToken,
+        body: {},
+      });
+      expect(ok.status, JSON.stringify(ok.body)).toBe(201);
+    };
+
+    await lose('2');
+    expect(await binStock(v)).toEqual({ 'A-01-03-1': '3.000' }); // came out of the unlocated 2
+    await lose('1');
+    expect(await binStock(v)).toEqual({ 'A-01-03-1': '2.000' }); // on_hand 2 < bins 3 -> trimmed
   });
 
   it('a bin with stock cannot be deactivated', async () => {

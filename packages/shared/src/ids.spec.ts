@@ -10,7 +10,9 @@ describe('uuidv7', () => {
   });
 
   it('encodes the timestamp in the first 48 bits', () => {
-    const now = Date.UTC(2026, 9, 1);
+    // Relative to the real clock: the generator never goes backwards, so a fixed date fails as soon
+    // as wall-clock time passes it.
+    const now = Date.now();
     const id = uuidv7(now + 5_000_000); // ahead of any earlier call in this process
     const ms = parseInt(id.replace(/-/g, '').slice(0, 12), 16);
     expect(ms).toBe(now + 5_000_000);

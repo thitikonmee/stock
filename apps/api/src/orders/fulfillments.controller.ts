@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Headers, Inject, Param, Post } from '@nestjs/common';
 import { z } from 'zod';
-import { orders, type iam } from '@stockos/core';
+import { inventory, orders, type iam } from '@stockos/core';
 import { tenantTx, type Db } from '@stockos/database';
 import { NotFoundError, ValidationError } from '@stockos/shared';
 import { CurrentPrincipal, RequirePermission } from '../auth/decorators';
@@ -28,6 +28,8 @@ export class FulfillmentsController {
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(orders.FulfillmentService) private readonly fulfillments: orders.FulfillmentService,
+    @Inject(orders.OrderService) private readonly orderService: orders.OrderService,
+    @Inject(inventory.LocationService) private readonly locations: inventory.LocationService,
   ) {}
 
   @RequirePermission('order.fulfill')
@@ -49,6 +51,27 @@ export class FulfillmentsController {
   @Get('orders/:orderId/fulfillments')
   list(@CurrentPrincipal() p: iam.Principal, @Param('orderId') orderId: string) {
     return tenantTx(this.db, p.tenantId, (tx) => this.fulfillments.list(tx, p, orderId));
+  }
+
+  /** Which bins to pick each line from (warehouses that use locations). */
+  @RequirePermission('order.read')
+  @Get('fulfillments/:id/pick-list')
+  pickList(@CurrentPrincipal() p: iam.Principal, @Param('id') id: string) {
+    return tenantTx(this.db, p.tenantId, async (tx) => {
+      const f = await this.fulfillments.get(tx, p, id);
+      if (!f) throw new NotFoundError('Fulfillment not found');
+      const order = await this.orderService.get(tx, p, f.orderId);
+      const byItem = new Map(order.lines.map((l) => [l.id, l]));
+      return this.locations.pickList(
+        tx,
+        p,
+        f.warehouseId,
+        f.items.flatMap((i) => {
+          const line = byItem.get(i.orderItemId);
+          return line ? [{ variantId: line.variantId, sku: line.sku, quantity: i.quantity }] : [];
+        }),
+      );
+    });
   }
 
   @RequirePermission('order.fulfill')
