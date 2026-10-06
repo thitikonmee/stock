@@ -1,5 +1,5 @@
 import { sql } from 'kysely';
-import type { Tx } from '@stockos/database';
+import { PgErrorCode, pgErrorCode, type Tx } from '@stockos/database';
 import { BusinessRuleError, NotFoundError, ValidationError, uuidv7 } from '@stockos/shared';
 import { assertCan, type Principal } from '../../iam/public-api';
 import type { SecretBox } from '../../auth/public-api';
@@ -72,14 +72,28 @@ export class ChannelAccountService {
       { tenantId: state.tenantId, redirectUri: state.redirectUri, state: '' },
       callback.query,
     );
-    const { rows } = await sql<{ id: string }>`
-      insert into channel_accounts (tenant_id, id, channel_code, external_shop_id, shop_name, status, connected_by)
-      values (${state.tenantId}, ${uuidv7()}, ${state.channelCode}, ${exchanged.externalShopId},
-              ${exchanged.shopName ?? null}, 'CONNECTED', ${state.membershipId})
-      on conflict (channel_code, region, external_shop_id) where status <> 'DISCONNECTED'
-        do update set status = 'CONNECTED', shop_name = excluded.shop_name, last_error = null, updated_at = now()
-      returning id`.execute(tx);
-    const channelAccountId = rows[0]!.id;
+    let channelAccountId: string;
+    try {
+      const { rows } = await sql<{ id: string }>`
+        insert into channel_accounts (tenant_id, id, channel_code, external_shop_id, shop_name, status, connected_by)
+        values (${state.tenantId}, ${uuidv7()}, ${state.channelCode}, ${exchanged.externalShopId},
+                ${exchanged.shopName ?? null}, 'CONNECTED', ${state.membershipId})
+        on conflict (channel_code, region, external_shop_id) where status <> 'DISCONNECTED'
+          do update set status = 'CONNECTED', shop_name = excluded.shop_name, last_error = null, updated_at = now()
+        returning id`.execute(tx);
+      channelAccountId = rows[0]!.id;
+    } catch (err) {
+      // The shop uniqueness index is global (one marketplace shop belongs to one tenant). When the
+      // conflicting row is another tenant's, RLS forbids the DO UPDATE and Postgres reports 42501.
+      if (pgErrorCode(err) === PgErrorCode.InsufficientPrivilege) {
+        throw new BusinessRuleError(
+          'SHOP_ALREADY_CONNECTED',
+          'This shop is already connected to another StockOS account',
+          { channelCode: state.channelCode, externalShopId: exchanged.externalShopId },
+        );
+      }
+      throw err;
+    }
     await this.vault.save(
       tx,
       { tenantId: state.tenantId, channelAccountId, externalShopId: exchanged.externalShopId },

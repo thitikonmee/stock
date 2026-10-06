@@ -393,3 +393,38 @@ describe('channel connect + mapping + sync', () => {
     expect(again.status).toBe(422); // BusinessRuleError CHANNEL_DISCONNECTED
   });
 });
+
+describe('a shop belongs to one tenant', () => {
+  async function connectShop(token: string, shopId: number) {
+    const connect = await call(api, 'POST', '/api/v1/channels/shopee/connect', { token });
+    fixture.issuedShopId = shopId;
+    const cb = await call(
+      api,
+      'GET',
+      `/api/v1/channels/shopee/callback?state=${encodeURIComponent(connect.body.state)}&code=abc&shop_id=${shopId}`,
+    );
+    expect(cb.status).toBe(302);
+    return new URL(String(cb.headers.location), 'https://x.test');
+  }
+
+  it("refuses to connect a shop another tenant already has, with a clear error and the first tenant's link intact", async () => {
+    const first = await signup(api, 'ShopOwnerA');
+    const second = await signup(api, 'ShopOwnerB');
+    const ok = await connectShop(first.accessToken, 700555);
+    const firstAccountId = ok.searchParams.get('connected')!;
+    expect(firstAccountId).toBeTruthy();
+
+    const refused = await connectShop(second.accessToken, 700555);
+    expect(refused.pathname).toBe('/channels');
+    expect(refused.searchParams.get('connected')).toBeNull();
+    expect(refused.searchParams.get('code')).toBe('SHOP_ALREADY_CONNECTED');
+    expect(refused.searchParams.get('error')).not.toMatch(/row-level security/i);
+
+    const mine = await call(api, 'GET', `/api/v1/channel-accounts/${firstAccountId}`, {
+      token: first.accessToken,
+    });
+    expect(mine.body).toMatchObject({ status: 'CONNECTED', externalShopId: '700555' });
+    const theirs = await call(api, 'GET', '/api/v1/channel-accounts', { token: second.accessToken });
+    expect(theirs.body).toEqual([]);
+  });
+});

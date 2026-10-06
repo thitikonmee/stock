@@ -1,6 +1,6 @@
 import { sql } from 'kysely';
 import type { Tx } from '@stockos/database';
-import { BusinessRuleError, NotFoundError, ValidationError, isUuid, uuidv7 } from '@stockos/shared';
+import { BusinessRuleError, Dec, NotFoundError, ValidationError, isUuid, uuidv7 } from '@stockos/shared';
 import { recordAudit } from '../../audit/public-api';
 import type { PriceService, ProductService } from '../../catalog/public-api';
 import { assertCan, type Principal } from '../../iam/public-api';
@@ -110,7 +110,9 @@ export class OrderService {
     }
 
     for (const line of totals.lines) await this.insertOrderItem(tx, principal.tenantId, orderId, line);
-    if (paid) {
+    // A free order (grand total 0, e.g. a giveaway) is paid with nothing collected: there is no
+    // amount to record, and `payments.amount` must be > 0.
+    if (paid && new Dec(totals.grandTotal).greaterThan(0)) {
       // A record for RefundService to refund against — this phase has no real payment gateway,
       // so "paid" just means the amount is recorded as already settled (matches how POS records cash).
       await sql`insert into payments (tenant_id, id, order_id, method, status, amount, idempotency_key, paid_at)
@@ -162,7 +164,7 @@ export class OrderService {
       select id from payments where order_id = ${orderId} and idempotency_key = ${`order:${orderId}:payment`}`.execute(
       tx,
     );
-    if (rows.length === 0) {
+    if (rows.length === 0 && new Dec(order.grandTotal).greaterThan(0)) {
       await sql`insert into payments (tenant_id, id, order_id, method, status, amount, idempotency_key, paid_at)
                 values (${principal.tenantId}, ${uuidv7()}, ${orderId}, 'GATEWAY', 'SUCCEEDED', ${order.grandTotal},
                         ${`order:${orderId}:payment`}, now())`.execute(tx);
