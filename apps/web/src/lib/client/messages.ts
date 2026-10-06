@@ -40,6 +40,8 @@ const MESSAGES: Record<string, string> = {
   DISCOUNT_EXCEEDS_LINE: 'ส่วนลดเกินยอดของรายการนี้',
   CHANNEL_NOT_CONNECTED: 'ยังไม่ได้เชื่อมต่อช่องทางนี้',
   CHANNEL_DISCONNECTED: 'ช่องทางนี้ถูกยกเลิกการเชื่อมต่อไปแล้ว',
+  SHOP_ALREADY_CONNECTED:
+    'ร้านนี้เชื่อมต่อกับบัญชี StockOS อื่นอยู่แล้ว — ยกเลิกการเชื่อมต่อจากบัญชีนั้นก่อน',
   OVER_RECEIVE: 'จำนวนที่รับเกินกว่าที่ค้างรับ/อยู่ระหว่างขนส่ง',
   OVER_ALLOCATED: 'โควต้ารวมเกินสต็อกที่ว่างให้จัดสรร',
   ALLOCATION_BELOW_CONSUMED: 'ตั้งโควต้าต่ำกว่าที่ร้านนี้ขายไปแล้วไม่ได้',

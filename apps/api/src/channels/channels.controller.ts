@@ -3,10 +3,10 @@ import type { FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { channels, type iam } from '@stockos/core';
 import { tenantTx, type Db } from '@stockos/database';
-import { NotFoundError, ValidationError } from '@stockos/shared';
+import { NotFoundError, ValidationError, isDomainError, type Logger } from '@stockos/shared';
 import { CurrentPrincipal, Public, RequirePermission } from '../auth/decorators';
 import { parse } from '../common/validation';
-import { API_BASE_URL, DB, WEB_BASE_URL } from '../tokens';
+import { API_BASE_URL, DB, LOGGER, WEB_BASE_URL } from '../tokens';
 
 const SUPPORTED_CHANNELS = ['SHOPEE', 'LAZADA', 'TIKTOK'] as const;
 function assertSupportedChannel(code: string): channels.ChannelCode {
@@ -24,6 +24,7 @@ export class ChannelsController {
     @Inject(API_BASE_URL) private readonly apiBaseUrl: string,
     @Inject(WEB_BASE_URL) private readonly webBaseUrl: string,
     @Inject(channels.ChannelAccountService) private readonly accounts: channels.ChannelAccountService,
+    @Inject(LOGGER) private readonly logger: Logger,
   ) {}
 
   @RequirePermission('channel.manage')
@@ -53,8 +54,16 @@ export class ChannelsController {
       );
       void reply.redirect(`${this.webBaseUrl}/channels?connected=${account.id}`, 302);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'connect failed';
-      void reply.redirect(`${this.webBaseUrl}/channels?error=${encodeURIComponent(message)}`, 302);
+      // Only our own business errors are safe to show; anything else (e.g. a database error) gets a
+      // generic message instead of leaking internals into the URL.
+      const known = isDomainError(err);
+      const params = new URLSearchParams({
+        error: known ? err.message : 'Connecting the shop failed, please try again',
+        ...(known ? { code: err.code } : {}),
+      });
+      if (!known)
+        this.logger.error({ err, event: 'channel.connect_failed' }, 'channel connect callback failed');
+      void reply.redirect(`${this.webBaseUrl}/channels?${params.toString()}`, 302);
     }
   }
 }

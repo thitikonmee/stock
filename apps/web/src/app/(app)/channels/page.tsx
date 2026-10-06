@@ -15,7 +15,8 @@ import {
   Td,
   formatDate,
 } from '@/components/ui';
-import { api } from '@/lib/client/api';
+import { api, ApiError } from '@/lib/client/api';
+import { messageFor } from '@/lib/client/messages';
 import type { ChannelAccount, ChannelAccountStatus } from '@/lib/client/types';
 import { can } from '@/lib/client/types';
 import { useResource } from '@/lib/client/use-resource';
@@ -47,7 +48,10 @@ export default function ChannelsPage() {
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
     if (q.get('connected')) setBanner({ tone: 'success', text: 'เชื่อมต่อร้านค้าสำเร็จ' });
-    else if (q.get('error')) setBanner({ tone: 'warning', text: `เชื่อมต่อไม่สำเร็จ: ${q.get('error')}` });
+    else if (q.get('error')) {
+      const reason = messageFor(new ApiError(0, q.get('code') ?? 'ERROR', q.get('error') ?? ''));
+      setBanner({ tone: 'warning', text: `เชื่อมต่อไม่สำเร็จ: ${reason}` });
+    }
     if (q.get('connected') || q.get('error')) window.history.replaceState({}, '', '/channels');
   }, []);
 

@@ -151,6 +151,19 @@ describe('order lifecycle', () => {
   });
 });
 
+describe('free (zero-total) orders', () => {
+  it('can be created already paid, or paid later, without a payment amount', async () => {
+    const variantId = await createVariant(`FREE-${uuidv7().slice(-6).toUpperCase()}`, '0.00');
+    const paidUpfront = await createOrder(variantId, { paid: true });
+    expect(paidUpfront).toMatchObject({ grandTotal: '0.00', paymentStatus: 'PAID' });
+
+    const unpaid = await createOrder(variantId);
+    const paidLater = await call(api, 'POST', `/api/v1/orders/${unpaid.id}/pay`, { token: t.accessToken });
+    expect(paidLater.status, JSON.stringify(paidLater.body)).toBe(201);
+    expect(paidLater.body).toMatchObject({ grandTotal: '0.00', paymentStatus: 'PAID' });
+  });
+});
+
 describe('fulfillment', () => {
   it('ships partially, then fully, moving order status only once fully shipped', async () => {
     const variantId = await createVariant(`FUL-${Date.now()}`);
