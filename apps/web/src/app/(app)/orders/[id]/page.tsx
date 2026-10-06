@@ -107,6 +107,7 @@ export default function OrderDetailPage() {
   const { me } = useMe();
   const order = useResource<Order>(`/orders/${id}`);
   const fulfillments = useResource<OrderFulfillment[]>(`/orders/${id}/fulfillments`);
+  const [pickListFor, setPickListFor] = useState<string | null>(null);
   const returns = useResource<OrderReturn[]>(`/orders/${id}/returns`);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<unknown>();
@@ -274,6 +275,9 @@ export default function OrderDetailPage() {
         </div>
       </Card>
 
+      {pickListFor ? (
+        <PickListModal fulfillmentId={pickListFor} onClose={() => setPickListFor(null)} />
+      ) : null}
       <Card title="ใบจัดส่ง (Fulfillments)" className="mb-6">
         <Table
           head={['สถานะ', 'ขนส่ง', 'เลขพัสดุ', 'จัดส่งเมื่อ', '']}
@@ -288,6 +292,11 @@ export default function OrderDetailPage() {
               <Td className="font-mono">{f.trackingNo ?? '—'}</Td>
               <Td className="text-slate-600">{f.shippedAt ? formatDate(f.shippedAt) : '—'}</Td>
               <Td className="text-right">
+                {f.status === 'PICKING' || f.status === 'PACKED' ? (
+                  <Button variant="ghost" className="mr-2" onClick={() => setPickListFor(f.id)}>
+                    ใบหยิบสินค้า
+                  </Button>
+                ) : null}
                 {f.status === 'PICKING' && can(me, 'order.fulfill') ? (
                   <Button variant="secondary" busy={busy === f.id} onClick={() => void packFulfillment(f.id)}>
                     แพ็กแล้ว
@@ -664,6 +673,60 @@ function RefundModal({
           </Button>
         </div>
       </form>
+    </Modal>
+  );
+}
+
+interface PickList {
+  useLocations: boolean;
+  lines: {
+    variantId: string;
+    sku: string;
+    quantity: string;
+    suggestions: { locationId: string; fullCode: string; quantity: string }[];
+    shortfall: string;
+  }[];
+}
+
+/** Which bins to walk to for a fulfillment (warehouses that use bin locations). */
+function PickListModal({ fulfillmentId, onClose }: { fulfillmentId: string; onClose: () => void }) {
+  const { data, error } = useResource<PickList>(`/fulfillments/${fulfillmentId}/pick-list`);
+  const n = (v: string) => Number(v).toLocaleString('th-TH', { maximumFractionDigits: 3 });
+  return (
+    <Modal open title="ใบหยิบสินค้า" onClose={onClose}>
+      <ErrorBox error={error} />
+      {data && !data.useLocations ? (
+        <p className="text-sm text-slate-600">คลังนี้ยังไม่ได้ใช้ตำแหน่งจัดเก็บ (bin) — หยิบตามปกติ</p>
+      ) : null}
+      {data?.useLocations ? (
+        <Table head={['SKU', 'จำนวน', 'หยิบจากช่อง']}>
+          {data.lines.map((l) => (
+            <tr key={l.variantId}>
+              <Td className="font-mono">{l.sku}</Td>
+              <Td className="tabular-nums">{n(l.quantity)}</Td>
+              <Td>
+                <ul className="space-y-0.5">
+                  {l.suggestions.map((s) => (
+                    <li key={s.locationId}>
+                      <span className="font-mono">{s.fullCode}</span> × {n(s.quantity)}
+                    </li>
+                  ))}
+                  {Number(l.shortfall) > 0 ? (
+                    <li className="text-amber-700">
+                      ที่เหลือ {n(l.shortfall)} จากของที่ยังไม่จัดเก็บเข้าช่อง
+                    </li>
+                  ) : null}
+                </ul>
+              </Td>
+            </tr>
+          ))}
+        </Table>
+      ) : null}
+      <div className="flex justify-end">
+        <Button variant="secondary" onClick={onClose}>
+          ปิด
+        </Button>
+      </div>
     </Modal>
   );
 }

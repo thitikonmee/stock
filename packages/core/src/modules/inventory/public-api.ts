@@ -72,5 +72,6 @@ export {
   type LocationMoveLine,
   type LocationStock,
   type PickSuggestion,
+  type PickSuggestionResult,
   type WarehouseLocation,
 } from './application/location-service';

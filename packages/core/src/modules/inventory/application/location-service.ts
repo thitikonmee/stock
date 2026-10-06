@@ -60,6 +60,12 @@ export interface PickSuggestion {
   quantity: string;
 }
 
+export interface PickSuggestionResult {
+  suggestions: PickSuggestion[];
+  /** Part of the quantity no pickable bin holds (take it from stock not put away yet). */
+  shortfall: string;
+}
+
 export interface LocationDiscrepancy {
   variantId: string;
   sku: string;
@@ -287,7 +293,7 @@ export class LocationService {
     warehouseId: string,
     variantId: string,
     quantity: string,
-  ): Promise<{ suggestions: PickSuggestion[]; shortfall: string }> {
+  ): Promise<PickSuggestionResult> {
     assertCan(principal, 'inventory.read', { warehouseId });
     await requireWarehouse(tx, warehouseId);
     if (!isUuid(variantId)) throw new ValidationError('Unknown variant');
@@ -306,6 +312,34 @@ export class LocationService {
       remaining = remaining.minus(take);
     }
     return { suggestions, shortfall: formatQuantity(remaining.isNegative() ? new Dec(0) : remaining) };
+  }
+
+  /**
+   * Pick list for several lines at once (e.g. one fulfillment). Uses the same fullest-first order
+   * InventoryEngine follows when the goods actually leave, so the bins on the list are the bins that
+   * get decremented at shipment.
+   */
+  async pickList(
+    tx: Tx,
+    principal: Principal,
+    warehouseId: string,
+    lines: readonly { variantId: string; sku: string; quantity: string }[],
+  ): Promise<{
+    useLocations: boolean;
+    lines: (PickSuggestionResult & { variantId: string; sku: string; quantity: string })[];
+  }> {
+    assertCan(principal, 'inventory.read', { warehouseId });
+    await requireWarehouse(tx, warehouseId);
+    const { rows } = await sql<{ use_locations: boolean }>`
+      select use_locations from warehouses where id = ${warehouseId}`.execute(tx);
+    const out = [];
+    for (const line of lines) {
+      out.push({
+        ...line,
+        ...(await this.pickSuggestions(tx, principal, warehouseId, line.variantId, line.quantity)),
+      });
+    }
+    return { useLocations: rows[0]?.use_locations ?? false, lines: out };
   }
 
   /** SKUs whose bins don't add up to the warehouse on_hand (reconcile job/report). */

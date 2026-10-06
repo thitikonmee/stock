@@ -10,6 +10,7 @@ import {
   readBalances,
   type UpdatedBalance,
 } from '../infrastructure/balance-repository';
+import { releaseFromLocations } from '../infrastructure/location-repository';
 import {
   findMovementByKey,
   insertLedgerLines,
@@ -18,6 +19,8 @@ import {
 } from '../infrastructure/ledger-repository';
 
 const MAX_LINES = 500;
+/** Outbound operations where someone physically picks the goods off a shelf (bins first). */
+const PICKING_OPERATIONS = new Set(['SHIP', 'SELL_DIRECT', 'TRANSFER_OUT']);
 
 interface PreparedLine {
   input: MovementLineInput;
@@ -114,6 +117,16 @@ export class InventoryEngine {
         operation: cmd.operation,
         requested: line.effect.guardQuantity.toFixed(3),
         ...(outcome.reason === 'GUARD' ? await this.currentAvailable(tx, cmd.tenantId, line.input) : {}),
+      });
+    }
+    const onHandDelta = line.effect.deltas.ON_HAND;
+    if (onHandDelta?.isNegative()) {
+      await releaseFromLocations(tx, {
+        warehouseId: line.input.warehouseId,
+        variantId: line.input.variantId,
+        quantity: onHandDelta.abs(),
+        onHandAfter: new Dec(outcome.balance.onHand),
+        binsFirst: PICKING_OPERATIONS.has(cmd.operation),
       });
     }
     return outcome.balance;
